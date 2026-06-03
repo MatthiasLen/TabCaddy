@@ -17,13 +17,23 @@ def main() -> None:
     )
     parser.add_argument(
         "--rows",
+        "-r",
         type=int,
         default=10,
         help="Number of rows to generate per file.",
     )
+    parser.add_argument(
+        "-n",
+        "--num-files",
+        type=int,
+        default=None,
+        help="Number of telemetry files to generate in each telemetry group.",
+    )
     args = parser.parse_args()
 
-    layout = generate_synthetic_test_assets(Path(args.output), n=args.rows)
+    layout = generate_synthetic_test_assets(
+        Path(args.output), n=args.rows, num_files=args.num_files
+    )
     print(f"Synthetic assets written to {layout.output_root}")
     print(f"- baseline: {layout.baseline_root}")
     print(f"- variant: {layout.variant_root}")

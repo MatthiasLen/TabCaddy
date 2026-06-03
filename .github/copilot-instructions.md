@@ -1,8 +1,10 @@
 # Output rules
-- Code only. No explanation unless I explicitly ask
+- Code only. No explanation unless I explicitly ask!
 - No markdown preamble.
 - No "Here is you code:" intro.
-- No closing summaries.
+- No closing summaries!
+- No "Changes made" summaries!
+- No "validation performed" summaries!
 
 # Code Style
 - ALWAYS write professional, production-quality, well-engineered code.
@@ -20,6 +22,3 @@
 - Organize code into modules with clear separation of concerns.
 - Optimize for maintainability; avoid over-engineering and premature abstraction.
 - Extract helpers only when they are reused, encapsulate meaningful policy, improve testability, or hide non-trivial complexity.
-
-# After completing implementation
-- Verify all changes comply with these guidelines and refactor any violations.

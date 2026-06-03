@@ -10,6 +10,57 @@ from pathlib import Path
 import polars as pl
 
 
+_WORK_TYPES = ["RuneCare - Ritual Tune", "Flux Repair"]
+_SYMPTOM_OPTIONS = [
+    ("null", "null"),
+    ("Flowcraft", "MIST"),
+    ("Sparkwork", "ARC"),
+]
+_SERVICE_BASE_DATE = datetime(2026, 3, 1, tzinfo=timezone.utc)
+_DEFAULT_VERSION_SPECS = [
+    (
+        "1000001-10000",
+        datetime(2023, 7, 17, 5, 20, 24, 855855, tzinfo=timezone.utc),
+        0,
+        0,
+        0,
+    ),
+    (
+        "100002-100209",
+        datetime(2025, 2, 5, 15, 27, 24, 528528, tzinfo=timezone.utc),
+        1,
+        8,
+        3,
+    ),
+]
+_DEFAULT_MCU_SPECS = [
+    (
+        "1000001-10000",
+        datetime(2023, 7, 17, 5, 20, 24, 855855, tzinfo=timezone.utc),
+        0,
+        0,
+    ),
+    (
+        "100002-100209",
+        datetime(2025, 2, 5, 15, 27, 24, 528528, tzinfo=timezone.utc),
+        11,
+        4,
+    ),
+    (
+        "100003-100075",
+        datetime(2024, 3, 1, 9, 42, 10, 101010, tzinfo=timezone.utc),
+        6,
+        7,
+    ),
+]
+_VARIANT_EXTRA_MCU_SPEC = (
+    "100250-100999",
+    datetime(2026, 1, 8, 11, 5, 0, 222222, tzinfo=timezone.utc),
+    14,
+    5,
+)
+
+
 @dataclass(frozen=True)
 class SyntheticAssetLayout:
     output_root: Path
@@ -18,10 +69,12 @@ class SyntheticAssetLayout:
 
 
 def generate_synthetic_test_assets(
-    output_root: Path, n: int = 10
+    output_root: Path, n: int = 10, num_files: int | None = None
 ) -> SyntheticAssetLayout:
     if n < 1:
         raise ValueError("n must be at least 1")
+    if num_files is not None and num_files < 1:
+        raise ValueError("num_files must be at least 1")
 
     output_root = output_root.expanduser().resolve()
     baseline_root = output_root / "baseline"
@@ -31,8 +84,29 @@ def generate_synthetic_test_assets(
         if root.exists():
             shutil.rmtree(root)
 
-    _write_bundle(baseline_root, variant=False, n=n, seed=20260422)
-    _write_bundle(variant_root, variant=True, n=n, seed=20260207)
+    version_specs: list[tuple[str, datetime, int, int, int]] | None = None
+    mcu_specs: list[tuple[str, datetime, int, int]] | None = None
+    if num_files is not None:
+        spec_rng = random.Random(20260303)
+        version_specs = _build_random_version_specs(count=num_files, rng=spec_rng)
+        mcu_specs = _build_random_mcu_specs(count=num_files, rng=spec_rng)
+
+    _write_bundle(
+        baseline_root,
+        variant=False,
+        n=n,
+        seed=20260422,
+        version_specs=version_specs,
+        mcu_specs=mcu_specs,
+    )
+    _write_bundle(
+        variant_root,
+        variant=True,
+        n=n,
+        seed=20260207,
+        version_specs=version_specs,
+        mcu_specs=mcu_specs,
+    )
 
     manifest = {
         "rows_per_file": n,
@@ -57,27 +131,29 @@ def _bundle_manifest(root: Path) -> dict[str, object]:
     return {"root": str(root), "file_count": len(files), "files": files}
 
 
-def _write_bundle(root: Path, variant: bool, n: int, seed: int) -> None:
+def _write_bundle(
+    root: Path,
+    variant: bool,
+    n: int,
+    seed: int,
+    version_specs: list[tuple[str, datetime, int, int, int]] | None = None,
+    mcu_specs: list[tuple[str, datetime, int, int]] | None = None,
+) -> None:
     root.mkdir(parents=True, exist_ok=True)
     rng = random.Random(seed)
 
-    version_specs = [
-        (
-            "1000001-10000",
-            datetime(2023, 7, 17, 5, 20, 24, 855855, tzinfo=timezone.utc),
-            0,
-            0,
-            0,
-        ),
-        (
-            "100002-100209",
-            datetime(2025, 2, 5, 15, 27, 24, 528528, tzinfo=timezone.utc),
-            1,
-            8,
-            3,
-        ),
-    ]
-    for serial, start, version_seed, voltage_shift, current_shift in version_specs:
+    effective_version_specs = list(version_specs or _DEFAULT_VERSION_SPECS)
+    variant_version_target = effective_version_specs[
+        min(1, len(effective_version_specs) - 1)
+    ][0]
+
+    for (
+        serial,
+        start,
+        version_seed,
+        voltage_shift,
+        current_shift,
+    ) in effective_version_specs:
         frame = _build_version_telemetry_frame(
             start=start,
             version_seed=version_seed,
@@ -86,7 +162,7 @@ def _write_bundle(root: Path, variant: bool, n: int, seed: int) -> None:
             n=n,
             rng=rng,
         )
-        if variant and serial == "100002-100209":
+        if variant and serial == variant_version_target:
             frame = frame.with_columns(
                 [
                     (pl.col("DELTA_TIME") + 5000).alias("DELTA_TIME"),
@@ -98,36 +174,11 @@ def _write_bundle(root: Path, variant: bool, n: int, seed: int) -> None:
             )
         _write_feather(root / "telemetry" / "version" / f"{serial}_SUDS.feather", frame)
 
-    mcu_specs = [
-        (
-            "1000001-10000",
-            datetime(2023, 7, 17, 5, 20, 24, 855855, tzinfo=timezone.utc),
-            0,
-            0,
-        ),
-        (
-            "100002-100209",
-            datetime(2025, 2, 5, 15, 27, 24, 528528, tzinfo=timezone.utc),
-            11,
-            4,
-        ),
-        (
-            "100003-100075",
-            datetime(2024, 3, 1, 9, 42, 10, 101010, tzinfo=timezone.utc),
-            6,
-            7,
-        ),
-    ]
-    if variant:
-        mcu_specs.append(
-            (
-                "100250-100999",
-                datetime(2026, 1, 8, 11, 5, 0, 222222, tzinfo=timezone.utc),
-                14,
-                5,
-            )
-        )
-    for serial, start, voltage_shift, current_shift in mcu_specs:
+    effective_mcu_specs = list(mcu_specs or _DEFAULT_MCU_SPECS)
+    variant_mcu_target = effective_mcu_specs[min(1, len(effective_mcu_specs) - 1)][0]
+    if variant and mcu_specs is None:
+        effective_mcu_specs.append(_VARIANT_EXTRA_MCU_SPEC)
+    for serial, start, voltage_shift, current_shift in effective_mcu_specs:
         frame = _build_mcu_telemetry_frame(
             serial=serial,
             start=start,
@@ -136,7 +187,7 @@ def _write_bundle(root: Path, variant: bool, n: int, seed: int) -> None:
             n=n,
             rng=rng,
         )
-        if variant and serial == "100002-100209":
+        if variant and serial == variant_mcu_target:
             frame = frame.with_columns(
                 [
                     pl.when(pl.col("index") == 2)
@@ -248,6 +299,64 @@ def _build_common_telemetry_rows(
     return rows
 
 
+def _build_random_version_specs(
+    count: int, rng: random.Random
+) -> list[tuple[str, datetime, int, int, int]]:
+    specs: list[tuple[str, datetime, int, int, int]] = []
+    for serial in _build_random_serials(count=count, rng=rng):
+        specs.append(
+            (
+                serial,
+                _random_start_timestamp(rng),
+                rng.randint(0, 2),
+                rng.randint(-4, 12),
+                rng.randint(-4, 8),
+            )
+        )
+    return specs
+
+
+def _build_random_mcu_specs(
+    count: int, rng: random.Random
+) -> list[tuple[str, datetime, int, int]]:
+    specs: list[tuple[str, datetime, int, int]] = []
+    for serial in _build_random_serials(count=count, rng=rng):
+        specs.append(
+            (
+                serial,
+                _random_start_timestamp(rng),
+                rng.randint(-2, 14),
+                rng.randint(-2, 10),
+            )
+        )
+    return specs
+
+
+def _build_random_serials(count: int, rng: random.Random) -> list[str]:
+    serials: list[str] = []
+    seen: set[str] = set()
+    while len(serials) < count:
+        start = rng.randint(100000, 999999)
+        end = start + rng.randint(20, 2000)
+        serial = f"{start}-{end}"
+        if serial in seen:
+            continue
+        seen.add(serial)
+        serials.append(serial)
+    return serials
+
+
+def _random_start_timestamp(rng: random.Random) -> datetime:
+    base = datetime(2023, 1, 1, tzinfo=timezone.utc)
+    return base + timedelta(
+        days=rng.randint(0, 1_200),
+        hours=rng.randint(0, 23),
+        minutes=rng.randint(0, 59),
+        seconds=rng.randint(0, 59),
+        microseconds=rng.randint(0, 999_999),
+    )
+
+
 def _build_swcal_tools_parts_frame(
     variant: bool, n: int, rng: random.Random
 ) -> pl.DataFrame:
@@ -258,12 +367,6 @@ def _build_swcal_tools_parts_frame(
     ]
     if variant:
         country_options.append(("GB", "Glassmere", ["MOONHAVEN", "STARWICK"]))
-    work_types = ["RuneCare - Ritual Tune", "Flux Repair"]
-    symptom_options = [
-        ("null", "null"),
-        ("Flowcraft", "MIST"),
-        ("Sparkwork", "ARC"),
-    ]
     product_lines = ["Nebulon", "Aetheris", "Quorix"]
     line_types = ["Spellware", "Tuning Tools"]
     part_descriptions = [
@@ -277,17 +380,15 @@ def _build_swcal_tools_parts_frame(
     rows = []
     for index in range(n):
         country_code, country, cities = rng.choice(country_options)
-        symptom_category, symptom_code = rng.choice(symptom_options)
-        work_date = datetime(2026, 3, 1, tzinfo=timezone.utc) + timedelta(
-            days=index * 2
-        )
+        symptom_category, symptom_code = rng.choice(_SYMPTOM_OPTIONS)
+        work_date = _SERVICE_BASE_DATE + timedelta(days=index * 2)
         rows.append(
             {
                 "COUNTRY_CODE": country_code,
                 "COUNTRY": country,
                 "CITY": _maybe_missing(rng, rng.choice(cities), 0.06),
                 "WORK_ORDER": f"W-{613861 + index:09d}",
-                "WORK_ORDER_TYPE": rng.choice(work_types),
+                "WORK_ORDER_TYPE": rng.choice(_WORK_TYPES),
                 "SYMPTOM_CATEGORY": _maybe_missing(rng, symptom_category, 0.12),
                 "SYMPTOM_CODE": _maybe_missing(rng, symptom_code, 0.12),
                 "DATE": int(work_date.strftime("%Y%m%d")),
@@ -313,12 +414,6 @@ def _build_swcal_tools_parts_frame(
 def _build_products_consumed_frame(
     variant: bool, n: int, rng: random.Random
 ) -> pl.DataFrame:
-    work_types = ["RuneCare - Ritual Tune", "Flux Repair"]
-    symptom_options = [
-        ("null", "null"),
-        ("Flowcraft", "MIST"),
-        ("Sparkwork", "ARC"),
-    ]
     product_lines = ["Nebulon", "Aetheris", "Quorix"]
     tracking_types = ["Open Stock", "Batch Marked", "Rune Serialized"]
     product_descriptions = [
@@ -334,11 +429,9 @@ def _build_products_consumed_frame(
 
     rows = []
     for index in range(n):
-        symptom_category, symptom_code = rng.choice(symptom_options)
+        symptom_category, symptom_code = rng.choice(_SYMPTOM_OPTIONS)
         tracking_type = rng.choice(tracking_types)
-        work_date = datetime(2026, 3, 1, tzinfo=timezone.utc) + timedelta(
-            days=index * 2
-        )
+        work_date = _SERVICE_BASE_DATE + timedelta(days=index * 2)
         serial_number = None
         batch_number = None
         if tracking_type == "Batch Marked":
@@ -351,7 +444,7 @@ def _build_products_consumed_frame(
             {
                 "WORK_ORDER": f"W-{613861 + index:09d}",
                 "ID": f"0WOSe0000092{rng.choice(['cnB', 'coC', 'zzZ'])}{index:02d}AQ",
-                "WORK_ORDER_TYPE": rng.choice(work_types),
+                "WORK_ORDER_TYPE": rng.choice(_WORK_TYPES),
                 "SYMPTOM_CATEGORY": _maybe_missing(rng, symptom_category, 0.12),
                 "SYMPTOM_CODE": _maybe_missing(rng, symptom_code, 0.12),
                 "DATE": int(work_date.strftime("%Y%m%d")),
