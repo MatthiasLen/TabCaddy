@@ -48,7 +48,7 @@ def test_summary_render_snapshot() -> None:
         ),
         warnings=["Schema drift detected across 1 schema groups."],
     )
-    console = create_console(record=True, width=100)
+    console = create_console(record=True, width=100, legacy_windows=False)
     console.print(build_summary_view(analysis))
     output = console.export_text()
 
