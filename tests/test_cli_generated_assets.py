@@ -105,8 +105,14 @@ def test_generated_assets_cover_all_cli_commands(tmp_path: Path) -> None:
     )
     assert folder_diff_result.exit_code == 0
     assert "Modified file:" in folder_diff_result.stdout
-    assert "source_file_count" in folder_diff_result.stdout.lower() or "source file count" in folder_diff_result.stdout.lower()
-    assert ".mean:" in folder_diff_result.stdout or ".max_value:" in folder_diff_result.stdout
+    assert (
+        "source_file_count" in folder_diff_result.stdout.lower()
+        or "source file count" in folder_diff_result.stdout.lower()
+    )
+    assert (
+        ".mean:" in folder_diff_result.stdout
+        or ".max_value:" in folder_diff_result.stdout
+    )
 
     compiled_diff_result = runner.invoke(
         app, ["diff", str(compiled_left), str(compiled_right), "--level", "full"]
