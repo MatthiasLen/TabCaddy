@@ -2,46 +2,213 @@
 
 [![CI](https://github.com/MatthiasLen/TabCaddy/actions/workflows/ci.yml/badge.svg)](https://github.com/MatthiasLen/TabCaddy/actions/workflows/ci.yml)
 
-TabCaddy is a dataset-centric CLI for exploring, compiling, transforming, and diffing CSV, Feather, and compiled parquet datasets.
+TabCaddy is a command-line tool for exploring, compiling, transforming, and comparing tabular datasets.
 
-### Commands
+It works with single files, whole folders, and previously compiled datasets, so you can move from quick inspection to repeatable data workflows without switching tools.
 
-- `tabcaddy summary <source>`
-- `tabcaddy schema <source>`
-- `tabcaddy compile <folder> [--schema N]`
-- `tabcaddy transform <input> <transform.py> [output]`
-- `tabcaddy scaffold-transform <source> [--output transform_template.py]`
-- `tabcaddy diff <left> <right> [--level metadata|statistics|full]`
+### Install
+
+TabCaddy currently requires Python 3.13 or newer.
+
+Install with `pip`:
+
+```bash
+pip install tabcaddy
+```
+
+Install with `uv` as a standalone CLI:
+
+```bash
+uv tool install tabcaddy
+```
+
+If you prefer to add it to a project environment, you can also use:
+
+```bash
+uv add tabcaddy
+```
+
+### Supported Inputs
+
+- `.csv`
+- `.feather`
+- `.arrow`
+- folders containing supported files
+- compiled TabCaddy datasets created by `tabcaddy compile`
+
+### Quick Start
+
+Inspect a single dataset:
+
+```bash
+tabcaddy summary trades.feather
+```
+
+Inspect a folder of files:
+
+```bash
+tabcaddy summary data/
+```
+
+Look at schema drift across a folder:
+
+```bash
+tabcaddy schema data/
+```
+
+Compile a folder into a reusable parquet dataset:
+
+```bash
+tabcaddy compile data/
+```
+
+Compare two datasets:
+
+```bash
+tabcaddy diff old_data/ new_data/
+```
+
+### What `summary` Shows
+
+`tabcaddy summary` is the main entry point for understanding a dataset. Depending on the selected profile, it can show:
+
+- file, row, column, and schema counts
+- schema overview and schema distribution
+- per-column statistics such as null rate, min, max, and mean
+- date ranges for temporal columns
+- warnings such as schema drift
+- deep-profile histograms, uniqueness estimates, and column hashes
 
 ### Profiles
 
-- `quick`: metadata and schema counts
-- `standard`: metadata, schema overview, lightweight statistics
-- `deep`: full statistics, uniqueness estimates, histograms, and column hashes
+Use `--profile` with `summary` or `schema` to control how much work TabCaddy does.
 
-Run with the local virtual environment:
+- `quick`: counts only, for fast inspection
+- `standard`: metadata, schema overview, lightweight statistics, and warnings
+- `deep`: adds uniqueness estimates, histograms, and column hashes
 
-```powershell
-.\.venv\Scripts\python -m tabcaddy --help
+Example:
+
+```bash
+tabcaddy summary data/ --profile deep
 ```
 
-### Development Checks
+### Commands
 
-Install the dev tools and register the hooks:
+`summary`
 
-```powershell
-uv sync --group dev
-uv run pre-commit install
+```bash
+tabcaddy summary <source> [--profile quick|standard|deep]
 ```
 
-Run the same checks locally that GitHub Actions runs:
+Use this for everyday inspection of a file, folder, or compiled dataset.
 
-```powershell
-uv run pre-commit run --all-files
+`schema`
+
+```bash
+tabcaddy schema <source> [--profile quick|standard|deep]
 ```
 
-Run the test suite:
+Use this when you care specifically about schema groups, type changes, and files that violate the dominant schema.
 
-```powershell
-.\.venv\Scripts\python -m pytest
+`compile`
+
+```bash
+tabcaddy compile <folder> [--output compiled_dataset] [--schema N] [--interactive]
+```
+
+Compile a folder of compatible files into a parquet-backed TabCaddy dataset. If multiple schemas are present, you can either pick one explicitly with `--schema` or let TabCaddy ask you in `--interactive` mode.
+
+`transform`
+
+```bash
+tabcaddy transform <input> <transform.py> [output_folder] [--workers N]
+```
+
+Apply a Python transform to a single file or a folder of files. If you omit the output folder, TabCaddy creates one automatically by appending `_transformed`.
+
+Compiled datasets are not accepted as transform inputs in the current version.
+
+Supported transform signatures:
+
+```python
+def transform(df):
+    return df
+```
+
+```python
+def transform(df, context):
+    return df
+```
+
+The optional `context` includes:
+
+- `file_name`
+- `file_path`
+- `schema`
+- `metadata.row_count`
+- `metadata.schema_hash`
+
+`scaffold-transform`
+
+```bash
+tabcaddy scaffold-transform <source> [--output transform_template.py]
+```
+
+Generate a starter transform file with observed schemas and example snippets.
+
+`diff`
+
+```bash
+tabcaddy diff <left> <right> [--level metadata|statistics|full]
+```
+
+Compare two files, two folders, or two compiled datasets.
+
+- `metadata`: high-level changes only
+- `statistics`: metadata plus statistics changes
+- `full`: metadata, schema, and statistics changes
+
+### Typical Workflows
+
+Inspect a folder before deciding whether to compile it:
+
+```bash
+tabcaddy summary raw_exports/
+tabcaddy schema raw_exports/
+```
+
+Compile the dominant schema into a reusable dataset:
+
+```bash
+tabcaddy compile raw_exports/ --interactive
+```
+
+Generate a transform scaffold, edit it, then apply it:
+
+```bash
+tabcaddy scaffold-transform raw_exports/
+tabcaddy transform raw_exports/ transform_template.py cleaned_exports/
+```
+
+Compare two compiled snapshots:
+
+```bash
+tabcaddy diff compiled_dataset_2025_12 compiled_dataset_2026_01 --level full
+```
+
+### Help
+
+See all commands:
+
+```bash
+tabcaddy --help
+```
+
+See help for a specific command:
+
+```bash
+tabcaddy summary --help
+tabcaddy compile --help
+tabcaddy transform --help
 ```
