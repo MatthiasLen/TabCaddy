@@ -9,7 +9,9 @@ from tabcaddy.infrastructure.source_resolver import resolve_source
 def test_hash_schema_is_deterministic() -> None:
     columns = [ColumnDefinition("id", "Int64"), ColumnDefinition("value", "Float64")]
     assert hash_schema(columns) == hash_schema(list(columns))
-    assert hash_schema(columns) != hash_schema([ColumnDefinition("value", "Float64"), ColumnDefinition("id", "Int64")])
+    assert hash_schema(columns) != hash_schema(
+        [ColumnDefinition("value", "Float64"), ColumnDefinition("id", "Int64")]
+    )
 
 
 def test_schema_analyzer_groups_matching_files(drift_folder) -> None:

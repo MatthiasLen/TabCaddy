@@ -28,12 +28,15 @@ class TransformLoader:
         module = self._load_module(path)
         transform = getattr(module, "transform", None)
         if transform is None or not callable(transform):
-            raise ValueError("Transform module must define a callable named 'transform'.")
+            raise ValueError(
+                "Transform module must define a callable named 'transform'."
+            )
         signature = inspect.signature(transform)
         positional = [
             parameter
             for parameter in signature.parameters.values()
-            if parameter.kind in (parameter.POSITIONAL_ONLY, parameter.POSITIONAL_OR_KEYWORD)
+            if parameter.kind
+            in (parameter.POSITIONAL_ONLY, parameter.POSITIONAL_OR_KEYWORD)
         ]
         if len(positional) not in {1, 2}:
             raise ValueError("Transform signature must be (df) or (df, context).")

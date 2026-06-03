@@ -17,9 +17,13 @@ def test_summary_command_runs(homogeneous_folder) -> None:
     assert "Statistics" in result.stdout
 
 
-def test_compile_transform_scaffold_and_diff_commands(tmp_path: Path, drift_folder, homogeneous_folder) -> None:
+def test_compile_transform_scaffold_and_diff_commands(
+    tmp_path: Path, drift_folder, homogeneous_folder
+) -> None:
     compiled = tmp_path / "compiled_dataset"
-    compile_result = runner.invoke(app, ["compile", str(drift_folder), "--schema", "1", "--output", str(compiled)])
+    compile_result = runner.invoke(
+        app, ["compile", str(drift_folder), "--schema", "1", "--output", str(compiled)]
+    )
     assert compile_result.exit_code == 0
     assert (compiled / "metadata.json").exists()
     assert (compiled / "data").is_dir()
@@ -40,7 +44,15 @@ def test_compile_transform_scaffold_and_diff_commands(tmp_path: Path, drift_fold
     assert transformed.exists()
 
     scaffold_target = tmp_path / "template.py"
-    scaffold_result = runner.invoke(app, ["scaffold-transform", str(homogeneous_folder), "--output", str(scaffold_target)])
+    scaffold_result = runner.invoke(
+        app,
+        [
+            "scaffold-transform",
+            str(homogeneous_folder),
+            "--output",
+            str(scaffold_target),
+        ],
+    )
     assert scaffold_result.exit_code == 0
     assert "def transform" in scaffold_target.read_text(encoding="utf-8")
 

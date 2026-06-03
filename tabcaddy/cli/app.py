@@ -64,11 +64,15 @@ def compile(
     if interactive and schema_index is None:
         preview = AnalysisBuilder().build(source, ProfileMode.QUICK)
         if len(preview.analysis.schemas) > 1:
-            schema_index = typer.prompt("Multiple schemas detected. Choose schema number", type=int)
+            schema_index = typer.prompt(
+                "Multiple schemas detected. Choose schema number", type=int
+            )
     output_path, skipped = CompileDataset().run(source, output, schema_index)
     console.print(f"Compiled dataset written to [green]{output_path}[/green]")
     if skipped:
-        console.print(f"Skipped {len(skipped)} files from non-selected schemas.", style="yellow")
+        console.print(
+            f"Skipped {len(skipped)} files from non-selected schemas.", style="yellow"
+        )
 
 
 @app.command()
@@ -102,7 +106,9 @@ def diff(
 ) -> None:
     console = create_console()
     generator = GenerateAnalysis()
-    report = DiffDatasets(generator).run(resolve_source(left), resolve_source(right), level)
+    report = DiffDatasets(generator).run(
+        resolve_source(left), resolve_source(right), level
+    )
     console.print(build_diff_view(report))
 
 

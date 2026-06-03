@@ -6,10 +6,16 @@ from typing import Iterable
 from tabcaddy.domain.models import DatasetAnalysis, DiffLevel, DiffReport
 
 
-def compare_analyses(left: DatasetAnalysis, right: DatasetAnalysis, level: DiffLevel) -> DiffReport:
+def compare_analyses(
+    left: DatasetAnalysis, right: DatasetAnalysis, level: DiffLevel
+) -> DiffReport:
     metadata_changes = _diff_metadata(left, right)
     schema_changes = _diff_schema(left, right) if level == DiffLevel.FULL else []
-    statistics_changes = _diff_statistics(left, right) if level in {DiffLevel.STATISTICS, DiffLevel.FULL} else []
+    statistics_changes = (
+        _diff_statistics(left, right)
+        if level in {DiffLevel.STATISTICS, DiffLevel.FULL}
+        else []
+    )
     warnings = sorted({*left.warnings, *right.warnings})
     return DiffReport(
         metadata_changes=metadata_changes,
@@ -25,7 +31,9 @@ def _diff_metadata(left: DatasetAnalysis, right: DatasetAnalysis) -> list[str]:
         left_value = getattr(left.metadata, field)
         right_value = getattr(right.metadata, field)
         if left_value != right_value:
-            changes.append(f"{field.replace('_', ' ').title()}: {left_value} -> {right_value}")
+            changes.append(
+                f"{field.replace('_', ' ').title()}: {left_value} -> {right_value}"
+            )
     if left.metadata.column_hashes != right.metadata.column_hashes:
         changes.append("Column hashes changed")
     return changes
@@ -38,9 +46,13 @@ def _diff_schema(left: DatasetAnalysis, right: DatasetAnalysis) -> list[str]:
     added = sorted(set(right_schemas) - set(left_schemas))
     removed = sorted(set(left_schemas) - set(right_schemas))
     for schema_hash in added:
-        changes.append(f"Added schema {schema_hash[:12]} ({right_schemas[schema_hash].occurrence_count} files)")
+        changes.append(
+            f"Added schema {schema_hash[:12]} ({right_schemas[schema_hash].occurrence_count} files)"
+        )
     for schema_hash in removed:
-        changes.append(f"Removed schema {schema_hash[:12]} ({left_schemas[schema_hash].occurrence_count} files)")
+        changes.append(
+            f"Removed schema {schema_hash[:12]} ({left_schemas[schema_hash].occurrence_count} files)"
+        )
     left_columns = _column_type_map(left.schemas)
     right_columns = _column_type_map(right.schemas)
     for column_name in sorted(set(left_columns) | set(right_columns)):
@@ -70,7 +82,15 @@ def _diff_statistics(left: DatasetAnalysis, right: DatasetAnalysis) -> list[str]
         if left_stats is None or right_stats is None:
             changes.append(f"Column {column_name} only present in one statistics set")
             continue
-        for field in ("null_rate", "unique_estimate", "min_value", "max_value", "mean", "median", "stddev"):
+        for field in (
+            "null_rate",
+            "unique_estimate",
+            "min_value",
+            "max_value",
+            "mean",
+            "median",
+            "stddev",
+        ):
             left_value = getattr(left_stats, field)
             right_value = getattr(right_stats, field)
             if _values_differ(left_value, right_value):

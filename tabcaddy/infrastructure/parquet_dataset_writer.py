@@ -6,7 +6,9 @@ from typing import Iterable
 import polars as pl
 
 
-def write_parquet_dataset(frames: Iterable[pl.DataFrame], output_path: Path) -> list[Path]:
+def write_parquet_dataset(
+    frames: Iterable[pl.DataFrame], output_path: Path
+) -> list[Path]:
     data_path = output_path / "data"
     data_path.mkdir(parents=True, exist_ok=True)
     written: list[Path] = []

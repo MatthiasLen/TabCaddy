@@ -19,15 +19,26 @@ def build_schema_view(analysis: DatasetAnalysis, files: list[FileSchemaRecord]):
     schemas.add_column("Hash")
     schemas.add_column("Columns")
     for index, schema in enumerate(analysis.schemas, start=1):
-        columns = ", ".join(f"{column.name}:{column.dtype}" for column in schema.columns[:4])
+        columns = ", ".join(
+            f"{column.name}:{column.dtype}" for column in schema.columns[:4]
+        )
         if len(schema.columns) > 4:
             columns += ", ..."
-        schemas.add_row(f"Schema {index}", str(schema.occurrence_count), schema.hash[:12], columns)
+        schemas.add_row(
+            f"Schema {index}", str(schema.occurrence_count), schema.hash[:12], columns
+        )
     blocks.append(schemas)
 
-    distribution = render_bar_chart([(f"Schema {index}", schema.occurrence_count) for index, schema in enumerate(analysis.schemas, start=1)])
+    distribution = render_bar_chart(
+        [
+            (f"Schema {index}", schema.occurrence_count)
+            for index, schema in enumerate(analysis.schemas, start=1)
+        ]
+    )
     if distribution:
-        blocks.append(Panel(distribution, title="Occurrence Distribution", border_style="blue"))
+        blocks.append(
+            Panel(distribution, title="Occurrence Distribution", border_style="blue")
+        )
 
     drift = schema_type_changes(analysis.schemas)
     if drift:
@@ -47,7 +58,11 @@ def build_schema_view(analysis: DatasetAnalysis, files: list[FileSchemaRecord]):
             violating.add_column("Schema")
             violating.add_column("Rows", justify="right")
             for record in violations[:20]:
-                violating.add_row(record.relative_path.as_posix(), record.schema_hash[:12], str(record.row_count))
+                violating.add_row(
+                    record.relative_path.as_posix(),
+                    record.schema_hash[:12],
+                    str(record.row_count),
+                )
             blocks.append(violating)
 
     return Group(*blocks)

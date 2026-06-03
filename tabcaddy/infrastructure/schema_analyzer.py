@@ -6,7 +6,12 @@ from pathlib import Path
 
 import polars as pl
 
-from tabcaddy.domain.models import ColumnDefinition, DatasetSource, SchemaSignature, SourceType
+from tabcaddy.domain.models import (
+    ColumnDefinition,
+    DatasetSource,
+    SchemaSignature,
+    SourceType,
+)
 from tabcaddy.infrastructure.csv_reader import scan_csv
 from tabcaddy.infrastructure.feather_reader import scan_feather
 from tabcaddy.infrastructure.parquet_dataset_reader import scan_parquet_file
@@ -31,7 +36,9 @@ class SchemaAnalysisResult:
 
 def hash_schema(columns: list[ColumnDefinition]) -> str:
     digest = sha256()
-    digest.update("|".join(f"{column.name}:{column.dtype}" for column in columns).encode("utf-8"))
+    digest.update(
+        "|".join(f"{column.name}:{column.dtype}" for column in columns).encode("utf-8")
+    )
     return digest.hexdigest()
 
 
@@ -56,9 +63,15 @@ def _scan_file(path: Path) -> pl.LazyFrame:
 
 class SchemaAnalyzer:
     def analyze(self, source: DatasetSource) -> SchemaAnalysisResult:
-        return self.analyze_files(iter_dataset_files(source), base_path=source.path, source_type=source.source_type)
+        return self.analyze_files(
+            iter_dataset_files(source),
+            base_path=source.path,
+            source_type=source.source_type,
+        )
 
-    def analyze_files(self, files: list[Path], base_path: Path, source_type: SourceType) -> SchemaAnalysisResult:
+    def analyze_files(
+        self, files: list[Path], base_path: Path, source_type: SourceType
+    ) -> SchemaAnalysisResult:
         grouped: dict[str, dict[str, object]] = {}
         records: list[FileSchemaRecord] = []
         warnings: list[str] = []
@@ -66,10 +79,19 @@ class SchemaAnalyzer:
             try:
                 scan = _scan_file(path)
                 schema = scan.collect_schema()
-                columns = [ColumnDefinition(name=name, dtype=str(dtype)) for name, dtype in schema.items()]
+                columns = [
+                    ColumnDefinition(name=name, dtype=str(dtype))
+                    for name, dtype in schema.items()
+                ]
                 schema_hash = hash_schema(columns)
-                row_count = int(scan.select(pl.len().alias("row_count")).collect().item())
-                relative_path = path.relative_to(base_path) if source_type != SourceType.FILE else Path(path.name)
+                row_count = int(
+                    scan.select(pl.len().alias("row_count")).collect().item()
+                )
+                relative_path = (
+                    path.relative_to(base_path)
+                    if source_type != SourceType.FILE
+                    else Path(path.name)
+                )
                 records.append(
                     FileSchemaRecord(
                         path=path,
@@ -85,7 +107,11 @@ class SchemaAnalyzer:
             except Exception as exc:
                 warnings.append(f"Failed to inspect {path.name}: {exc}")
         schemas = [
-            SchemaSignature(columns=value["columns"], hash=schema_hash, occurrence_count=int(value["count"]))
+            SchemaSignature(
+                columns=value["columns"],
+                hash=schema_hash,
+                occurrence_count=int(value["count"]),
+            )
             for schema_hash, value in grouped.items()
         ]
         schemas.sort(key=lambda item: (-item.occurrence_count, item.hash))

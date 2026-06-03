@@ -9,7 +9,9 @@ SUPPORTED_FILE_SUFFIXES = {".csv", ".feather", ".arrow"}
 
 
 def is_compiled_dataset(path: Path) -> bool:
-    return path.is_dir() and (path / "metadata.json").exists() and (path / "data").is_dir()
+    return (
+        path.is_dir() and (path / "metadata.json").exists() and (path / "data").is_dir()
+    )
 
 
 def iter_dataset_files(source: DatasetSource) -> list[Path]:
@@ -17,7 +19,11 @@ def iter_dataset_files(source: DatasetSource) -> list[Path]:
         return [source.path]
     if source.source_type == SourceType.COMPILED_DATASET:
         return sorted((source.path / "data").glob("*.parquet"))
-    return sorted(path for path in source.path.rglob("*") if path.is_file() and path.suffix.lower() in SUPPORTED_FILE_SUFFIXES)
+    return sorted(
+        path
+        for path in source.path.rglob("*")
+        if path.is_file() and path.suffix.lower() in SUPPORTED_FILE_SUFFIXES
+    )
 
 
 def resolve_source(path: Path) -> DatasetSource:
@@ -30,7 +36,11 @@ def resolve_source(path: Path) -> DatasetSource:
         return DatasetSource(path=target, source_type=SourceType.FILE)
     if is_compiled_dataset(target):
         return DatasetSource(path=target, source_type=SourceType.COMPILED_DATASET)
-    files = [candidate for candidate in target.rglob("*") if candidate.is_file() and candidate.suffix.lower() in SUPPORTED_FILE_SUFFIXES]
+    files = [
+        candidate
+        for candidate in target.rglob("*")
+        if candidate.is_file() and candidate.suffix.lower() in SUPPORTED_FILE_SUFFIXES
+    ]
     if not files:
         raise ValueError(f"No supported files found under: {target}")
     return DatasetSource(path=target, source_type=SourceType.FOLDER)

@@ -1,12 +1,21 @@
 from __future__ import annotations
 
-from tabcaddy.domain.models import DatasetAnalysis, DatasetSource, ProfileMode, SourceType
+from tabcaddy.domain.models import (
+    DatasetAnalysis,
+    DatasetSource,
+    ProfileMode,
+    SourceType,
+)
 from tabcaddy.infrastructure.analysis_builder import AnalysisBuilder
 from tabcaddy.infrastructure.cache_manager import CacheManager
 
 
 class GenerateAnalysis:
-    def __init__(self, analysis_builder: AnalysisBuilder | None = None, cache_manager: CacheManager | None = None) -> None:
+    def __init__(
+        self,
+        analysis_builder: AnalysisBuilder | None = None,
+        cache_manager: CacheManager | None = None,
+    ) -> None:
         self._analysis_builder = analysis_builder or AnalysisBuilder()
         self._cache_manager = cache_manager or CacheManager()
 

@@ -25,7 +25,10 @@ def test_summary_render_contains_expected_sections() -> None:
         ),
         schemas=[
             SchemaSignature(
-                columns=[ColumnDefinition("id", "Int64"), ColumnDefinition("value", "Float64")],
+                columns=[
+                    ColumnDefinition("id", "Int64"),
+                    ColumnDefinition("value", "Float64"),
+                ],
                 hash="abc123",
                 occurrence_count=2,
             )
@@ -33,7 +36,9 @@ def test_summary_render_contains_expected_sections() -> None:
         statistics=DatasetStatistics(
             columns={
                 "id": ColumnStatistics("Int64", 0.0, None, 1, 4, 2.5, 2.5, 1.29),
-                "value": ColumnStatistics("Float64", 0.0, None, 10.0, 40.0, 25.0, 25.0, 12.9),
+                "value": ColumnStatistics(
+                    "Float64", 0.0, None, 10.0, 40.0, 25.0, 25.0, 12.9
+                ),
             }
         ),
         warnings=[],

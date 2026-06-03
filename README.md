@@ -1,5 +1,7 @@
 ## TabCaddy
 
+[![CI](https://github.com/MatthiasLen/TabCaddy/actions/workflows/ci.yml/badge.svg)](https://github.com/MatthiasLen/TabCaddy/actions/workflows/ci.yml)
+
 TabCaddy is a dataset-centric CLI for exploring, compiling, transforming, and diffing CSV, Feather, and compiled parquet datasets.
 
 ### Commands
@@ -23,4 +25,23 @@ Run with the local virtual environment:
 .\.venv\Scripts\python -m tabcaddy --help
 ```
 
+### Development Checks
 
+Install the dev tools and register the hooks:
+
+```powershell
+uv sync --group dev
+uv run pre-commit install
+```
+
+Run the same checks locally that GitHub Actions runs:
+
+```powershell
+uv run pre-commit run --all-files
+```
+
+Run the test suite:
+
+```powershell
+.\.venv\Scripts\python -m pytest
+```

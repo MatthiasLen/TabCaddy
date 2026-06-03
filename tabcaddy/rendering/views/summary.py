@@ -33,9 +33,16 @@ def build_summary_view(analysis: DatasetAnalysis):
         schema_table.add_row(f"Schema {index}", str(schema.occurrence_count), sample)
     blocks.append(schema_table)
 
-    distribution = render_bar_chart([(f"Schema {index}", schema.occurrence_count) for index, schema in enumerate(analysis.schemas, start=1)])
+    distribution = render_bar_chart(
+        [
+            (f"Schema {index}", schema.occurrence_count)
+            for index, schema in enumerate(analysis.schemas, start=1)
+        ]
+    )
     if distribution:
-        blocks.append(Panel(distribution, title="Schema Distribution", border_style="blue"))
+        blocks.append(
+            Panel(distribution, title="Schema Distribution", border_style="blue")
+        )
 
     if analysis.statistics is not None:
         stats = Table(title="Statistics", expand=True)
@@ -63,19 +70,33 @@ def build_summary_view(analysis: DatasetAnalysis):
         added = False
         for name, column in analysis.statistics.columns.items():
             if any(token in column.dtype for token in ("Date", "Datetime", "Time")):
-                temporal.add_row(name, "" if column.min_value is None else str(column.min_value), "" if column.max_value is None else str(column.max_value))
+                temporal.add_row(
+                    name,
+                    "" if column.min_value is None else str(column.min_value),
+                    "" if column.max_value is None else str(column.max_value),
+                )
                 added = True
         if added:
             blocks.append(temporal)
 
         for name, column in list(analysis.statistics.columns.items())[:3]:
             if column.histogram:
-                blocks.append(Panel(render_bar_chart(column.histogram, width=18), title=f"Histogram: {name}", border_style="blue"))
+                blocks.append(
+                    Panel(
+                        render_bar_chart(column.histogram, width=18),
+                        title=f"Histogram: {name}",
+                        border_style="blue",
+                    )
+                )
 
     if analysis.warnings:
-        warning_text = Text("\n".join(f"- {warning}" for warning in analysis.warnings), style="yellow")
+        warning_text = Text(
+            "\n".join(f"- {warning}" for warning in analysis.warnings), style="yellow"
+        )
         blocks.append(Panel(warning_text, title="Warnings", border_style="yellow"))
     else:
-        blocks.append(Panel("No warnings detected.", title="Warnings", border_style="green"))
+        blocks.append(
+            Panel("No warnings detected.", title="Warnings", border_style="green")
+        )
 
     return Group(*blocks)

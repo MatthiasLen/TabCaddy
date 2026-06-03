@@ -7,8 +7,8 @@
 - Avoid deep call stacks and multiple layers of indirection.
 - Do not introduce helper functions that have one call site and add little semantic value. Do not add "shallow" few-line wrappers.
 - Avoid temporary internal dataclasses, tuples, or helper objects whose only job is to shuttle a few computed values to one consumer.
-- Keep changes minimal and targeted. 
-- When fixing a bug or adressing a code review comment, do the change precisely and to the smallest possible scope that fully addresses the issue. 
+- Keep changes minimal and targeted.
+- When fixing a bug or adressing a code review comment, do the change precisely and to the smallest possible scope that fully addresses the issue.
 - Avoid "hacks" that introduce technical debt or reduce code clarity.
 
 ## Comments and docstrings

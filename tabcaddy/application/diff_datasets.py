@@ -12,7 +12,9 @@ class DiffDatasets:
         self._folder_differ = FolderDiffer(generate_analysis)
         self._compiled_differ = CompiledDatasetDiffer(generate_analysis)
 
-    def run(self, left: DatasetSource, right: DatasetSource, level: DiffLevel) -> DiffReport:
+    def run(
+        self, left: DatasetSource, right: DatasetSource, level: DiffLevel
+    ) -> DiffReport:
         if left.source_type == right.source_type == SourceType.FILE:
             return self._file_differ.diff(left, right, level)
         if left.source_type == right.source_type == SourceType.FOLDER:

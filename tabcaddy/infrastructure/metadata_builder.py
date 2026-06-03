@@ -14,7 +14,9 @@ class MetadataBuilder:
         column_count: int,
         column_hashes: dict[str, str] | None,
     ) -> DatasetMetadata:
-        schema_hash = schema_result.schemas[0].hash if len(schema_result.schemas) == 1 else None
+        schema_hash = (
+            schema_result.schemas[0].hash if len(schema_result.schemas) == 1 else None
+        )
         return DatasetMetadata(
             version=1,
             created_at=datetime.now(timezone.utc),

@@ -60,7 +60,10 @@ def test_analysis_builder_generates_metadata_and_statistics(tmp_path: Path) -> N
     assert analysis.statistics is not None
     assert analysis.statistics.columns["amount"].mean == 11.625
     assert analysis.statistics.columns["amount"].histogram is not None
-    assert sum(count for _, count in analysis.statistics.columns["amount"].histogram or []) == 4
+    assert (
+        sum(count for _, count in analysis.statistics.columns["amount"].histogram or [])
+        == 4
+    )
     assert analysis.metadata.column_hashes is not None
     assert "amount" in analysis.metadata.column_hashes
 
@@ -95,4 +98,7 @@ def test_diff_logic_reports_changes(tmp_path: Path) -> None:
     right_analysis = generator.run(resolve_source(right), ProfileMode.DEEP)
     report = compare_analyses(left_analysis, right_analysis, DiffLevel.FULL)
 
-    assert any("value.max_value" in item or "value.mean" in item for item in report.statistics_changes)
+    assert any(
+        "value.max_value" in item or "value.mean" in item
+        for item in report.statistics_changes
+    )

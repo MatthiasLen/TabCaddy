@@ -38,8 +38,12 @@ def test_summary_render_snapshot() -> None:
         statistics=DatasetStatistics(
             columns={
                 "id": ColumnStatistics("Int64", 0.0, 4, 1, 4, 2.5, 2.5, 1.29),
-                "amount": ColumnStatistics("Float64", 0.0, 4, 9.5, 15.0, 11.625, 11.0, 2.38),
-                "trade_date": ColumnStatistics("Date", 0.0, None, "2024-01-01", "2024-01-04", None, None, None),
+                "amount": ColumnStatistics(
+                    "Float64", 0.0, 4, 9.5, 15.0, 11.625, 11.0, 2.38
+                ),
+                "trade_date": ColumnStatistics(
+                    "Date", 0.0, None, "2024-01-01", "2024-01-04", None, None, None
+                ),
             }
         ),
         warnings=["Schema drift detected across 1 schema groups."],
@@ -48,5 +52,7 @@ def test_summary_render_snapshot() -> None:
     console.print(build_summary_view(analysis))
     output = console.export_text()
 
-    snapshot = (Path(__file__).parent / "snapshots" / "summary_output.txt").read_text(encoding="utf-8")
+    snapshot = (Path(__file__).parent / "snapshots" / "summary_output.txt").read_text(
+        encoding="utf-8"
+    )
     assert output == snapshot

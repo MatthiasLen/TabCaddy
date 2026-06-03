@@ -9,7 +9,11 @@ from tabcaddy.infrastructure.source_resolver import resolve_source
 
 
 def test_analysis_builder_computes_metadata_and_statistics(homogeneous_folder) -> None:
-    analysis = AnalysisBuilder().build(resolve_source(homogeneous_folder), ProfileMode.STANDARD).analysis
+    analysis = (
+        AnalysisBuilder()
+        .build(resolve_source(homogeneous_folder), ProfileMode.STANDARD)
+        .analysis
+    )
     assert analysis.metadata.row_count == 4
     assert analysis.metadata.column_count == 3
     assert analysis.metadata.source_file_count == 2
@@ -29,4 +33,7 @@ def test_cache_manager_round_trips_analysis(tmp_path, homogeneous_folder) -> Non
     assert loaded.schemas[0].hash == analysis.schemas[0].hash
     assert loaded.statistics is not None
     assert analysis.statistics is not None
-    assert loaded.statistics.columns["value"].histogram == analysis.statistics.columns["value"].histogram
+    assert (
+        loaded.statistics.columns["value"].histogram
+        == analysis.statistics.columns["value"].histogram
+    )

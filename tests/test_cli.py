@@ -40,12 +40,17 @@ def test_compile_transform_scaffold_and_diff_commands(tmp_path: Path) -> None:
     _write_csv(right / "a.csv", [{"id": 1, "value": 10.0}, {"id": 2, "value": 20.0}])
     _write_csv(right / "b.csv", [{"id": 3, "value": 12.0}])
 
-    compile_result = runner.invoke(app, ["compile", str(left), "--output", str(tmp_path / "compiled")])
+    compile_result = runner.invoke(
+        app, ["compile", str(left), "--output", str(tmp_path / "compiled")]
+    )
     assert compile_result.exit_code == 0
     assert (tmp_path / "compiled" / "metadata.json").exists()
     assert any((tmp_path / "compiled" / "data").iterdir())
 
-    scaffold_result = runner.invoke(app, ["scaffold-transform", str(left), "--output", str(tmp_path / "transform.py")])
+    scaffold_result = runner.invoke(
+        app,
+        ["scaffold-transform", str(left), "--output", str(tmp_path / "transform.py")],
+    )
     assert scaffold_result.exit_code == 0
     transform_path = tmp_path / "transform.py"
     transform_path.write_text(

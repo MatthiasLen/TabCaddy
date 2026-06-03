@@ -37,7 +37,10 @@ def analysis_to_dict(analysis: DatasetAnalysis) -> dict[str, Any]:
         },
         "schemas": [
             {
-                "columns": [{"name": column.name, "dtype": column.dtype} for column in schema.columns],
+                "columns": [
+                    {"name": column.name, "dtype": column.dtype}
+                    for column in schema.columns
+                ],
                 "hash": schema.hash,
                 "occurrence_count": schema.occurrence_count,
             }
@@ -58,7 +61,10 @@ def analysis_to_dict(analysis: DatasetAnalysis) -> dict[str, Any]:
                     "stddev": stats.stddev,
                     "histogram": None
                     if stats.histogram is None
-                    else [{"label": label, "count": count} for label, count in stats.histogram],
+                    else [
+                        {"label": label, "count": count}
+                        for label, count in stats.histogram
+                    ],
                 }
                 for name, stats in analysis.statistics.columns.items()
             }
@@ -82,7 +88,10 @@ def analysis_from_dict(payload: dict[str, Any]) -> DatasetAnalysis:
         ),
         schemas=[
             SchemaSignature(
-                columns=[ColumnDefinition(name=column["name"], dtype=column["dtype"]) for column in schema["columns"]],
+                columns=[
+                    ColumnDefinition(name=column["name"], dtype=column["dtype"])
+                    for column in schema["columns"]
+                ],
                 hash=schema["hash"],
                 occurrence_count=schema["occurrence_count"],
             )
@@ -103,7 +112,9 @@ def analysis_from_dict(payload: dict[str, Any]) -> DatasetAnalysis:
                     stddev=stats.get("stddev"),
                     histogram=None
                     if stats.get("histogram") is None
-                    else [(entry["label"], entry["count"]) for entry in stats["histogram"]],
+                    else [
+                        (entry["label"], entry["count"]) for entry in stats["histogram"]
+                    ],
                 )
                 for name, stats in statistics_payload.get("columns", {}).items()
             }

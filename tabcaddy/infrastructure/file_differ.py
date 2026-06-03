@@ -8,8 +8,12 @@ class FileDiffer:
     def __init__(self, generate_analysis) -> None:
         self._generate_analysis = generate_analysis
 
-    def diff(self, left: DatasetSource, right: DatasetSource, level: DiffLevel) -> DiffReport:
-        profile_mode = ProfileMode.DEEP if level != DiffLevel.METADATA else ProfileMode.STANDARD
+    def diff(
+        self, left: DatasetSource, right: DatasetSource, level: DiffLevel
+    ) -> DiffReport:
+        profile_mode = (
+            ProfileMode.DEEP if level != DiffLevel.METADATA else ProfileMode.STANDARD
+        )
         left_analysis = self._generate_analysis.run(left, profile_mode)
         right_analysis = self._generate_analysis.run(right, profile_mode)
         return compare_analyses(left_analysis, right_analysis, level)

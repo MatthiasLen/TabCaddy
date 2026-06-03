@@ -11,7 +11,9 @@ def build_diff_view(report: DiffReport):
     blocks: list[object] = []
     blocks.append(_build_section("Metadata Changes", report.metadata_changes, "cyan"))
     blocks.append(_build_section("Schema Changes", report.schema_changes, "blue"))
-    blocks.append(_build_section("Statistics Changes", report.statistics_changes, "green"))
+    blocks.append(
+        _build_section("Statistics Changes", report.statistics_changes, "green")
+    )
     blocks.append(_build_section("Warnings", report.warnings, "yellow"))
     return Group(*blocks)
 

@@ -21,7 +21,9 @@ class ScaffoldTransform:
             "# Observed schemas",
         ]
         for index, schema in enumerate(analysis.schemas, start=1):
-            lines.append(f"# Schema {index}: {schema.occurrence_count} files, hash={schema.hash}")
+            lines.append(
+                f"# Schema {index}: {schema.occurrence_count} files, hash={schema.hash}"
+            )
             for column in schema.columns:
                 lines.append(f"#   - {column.name}: {column.dtype}")
         lines.extend(

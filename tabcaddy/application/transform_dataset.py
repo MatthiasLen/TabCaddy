@@ -12,7 +12,11 @@ from tabcaddy.infrastructure.feather_reader import read_feather
 from tabcaddy.infrastructure.feather_writer import write_feather
 from tabcaddy.infrastructure.schema_analyzer import SchemaAnalyzer
 from tabcaddy.infrastructure.source_resolver import iter_dataset_files
-from tabcaddy.infrastructure.transform_loader import TransformContext, TransformLoader, TransformMetadata
+from tabcaddy.infrastructure.transform_loader import (
+    TransformContext,
+    TransformLoader,
+    TransformMetadata,
+)
 
 
 def _read_dataframe(path: Path) -> pl.DataFrame:
@@ -29,18 +33,32 @@ def _write_dataframe(df: pl.DataFrame, path: Path) -> None:
 
 
 class TransformDataset:
-    def __init__(self, transform_loader: TransformLoader | None = None, schema_analyzer: SchemaAnalyzer | None = None) -> None:
+    def __init__(
+        self,
+        transform_loader: TransformLoader | None = None,
+        schema_analyzer: SchemaAnalyzer | None = None,
+    ) -> None:
         self._transform_loader = transform_loader or TransformLoader()
         self._schema_analyzer = schema_analyzer or SchemaAnalyzer()
 
-    def run(self, source: DatasetSource, transform_path: Path, output_path: Path | None, workers: int) -> Path:
+    def run(
+        self,
+        source: DatasetSource,
+        transform_path: Path,
+        output_path: Path | None,
+        workers: int,
+    ) -> Path:
         if source.source_type == SourceType.COMPILED_DATASET:
-            raise ValueError("Transform currently supports files and folders, not compiled datasets.")
+            raise ValueError(
+                "Transform currently supports files and folders, not compiled datasets."
+            )
         output_root = output_path or self._default_output_path(source.path)
         output_root.mkdir(parents=True, exist_ok=True)
         transform, expects_context = self._transform_loader.load(transform_path)
         files = iter_dataset_files(source)
-        schema_result = self._schema_analyzer.analyze_files(files, base_path=source.path, source_type=source.source_type)
+        schema_result = self._schema_analyzer.analyze_files(
+            files, base_path=source.path, source_type=source.source_type
+        )
         record_map = {record.path: record for record in schema_result.files}
 
         def process(path: Path) -> None:
@@ -49,13 +67,24 @@ class TransformDataset:
             context = TransformContext(
                 file_name=path.name,
                 file_path=str(path),
-                schema=[{"name": column.name, "dtype": column.dtype} for column in record.columns],
-                metadata=TransformMetadata(row_count=record.row_count, schema_hash=record.schema_hash),
+                schema=[
+                    {"name": column.name, "dtype": column.dtype}
+                    for column in record.columns
+                ],
+                metadata=TransformMetadata(
+                    row_count=record.row_count, schema_hash=record.schema_hash
+                ),
             )
             result = transform(df, context) if expects_context else transform(df)
             if not isinstance(result, pl.DataFrame):
-                raise TypeError(f"Transform must return a Polars DataFrame for {path.name}")
-            relative_path = record.relative_path if source.source_type != SourceType.FILE else Path(path.name)
+                raise TypeError(
+                    f"Transform must return a Polars DataFrame for {path.name}"
+                )
+            relative_path = (
+                record.relative_path
+                if source.source_type != SourceType.FILE
+                else Path(path.name)
+            )
             _write_dataframe(result, output_root / relative_path)
 
         if workers <= 1:

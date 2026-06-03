@@ -12,12 +12,22 @@ from typing import Any
 import numpy as np
 import polars as pl
 
-from tabcaddy.domain.models import ColumnStatistics, DatasetAnalysis, DatasetSource, DatasetStatistics, ProfileMode, SourceType
+from tabcaddy.domain.models import (
+    ColumnStatistics,
+    DatasetAnalysis,
+    DatasetSource,
+    DatasetStatistics,
+    ProfileMode,
+    SourceType,
+)
 from tabcaddy.domain.serialization import analysis_from_dict
 from tabcaddy.infrastructure.csv_reader import scan_csv
 from tabcaddy.infrastructure.feather_reader import scan_feather
 from tabcaddy.infrastructure.metadata_builder import MetadataBuilder
-from tabcaddy.infrastructure.parquet_dataset_reader import scan_parquet_dataset, scan_parquet_file
+from tabcaddy.infrastructure.parquet_dataset_reader import (
+    scan_parquet_dataset,
+    scan_parquet_file,
+)
 from tabcaddy.infrastructure.schema_analyzer import FileSchemaRecord, SchemaAnalyzer
 from tabcaddy.infrastructure.source_resolver import iter_dataset_files
 
@@ -71,7 +81,11 @@ def _format_histogram_bound(value: float) -> str:
 
 
 class AnalysisBuilder:
-    def __init__(self, schema_analyzer: SchemaAnalyzer | None = None, metadata_builder: MetadataBuilder | None = None) -> None:
+    def __init__(
+        self,
+        schema_analyzer: SchemaAnalyzer | None = None,
+        metadata_builder: MetadataBuilder | None = None,
+    ) -> None:
         self._schema_analyzer = schema_analyzer or SchemaAnalyzer()
         self._metadata_builder = metadata_builder or MetadataBuilder()
 
@@ -81,7 +95,9 @@ class AnalysisBuilder:
             return None
         return analysis_from_dict(json.loads(metadata_path.read_text(encoding="utf-8")))
 
-    def build(self, source: DatasetSource, profile_mode: ProfileMode) -> AnalysisBuildResult:
+    def build(
+        self, source: DatasetSource, profile_mode: ProfileMode
+    ) -> AnalysisBuildResult:
         if source.source_type == SourceType.COMPILED_DATASET:
             compiled = self.load_compiled_analysis(source)
             if compiled is not None:
@@ -101,13 +117,19 @@ class AnalysisBuilder:
         source_type: SourceType,
         profile_mode: ProfileMode,
     ) -> AnalysisBuildResult:
-        schema_result = self._schema_analyzer.analyze_files(files, base_path=base_path, source_type=source_type)
+        schema_result = self._schema_analyzer.analyze_files(
+            files, base_path=base_path, source_type=source_type
+        )
         warnings = list(schema_result.warnings)
         if len(schema_result.schemas) > 1:
-            warnings.append(f"Schema drift detected across {len(schema_result.schemas)} schema groups.")
+            warnings.append(
+                f"Schema drift detected across {len(schema_result.schemas)} schema groups."
+            )
 
         row_count = sum(record.row_count for record in schema_result.files)
-        column_names = {column.name for schema in schema_result.schemas for column in schema.columns}
+        column_names = {
+            column.name for schema in schema_result.schemas for column in schema.columns
+        }
         statistics: DatasetStatistics | None = None
         column_hashes: dict[str, str] | None = None
 
@@ -131,7 +153,9 @@ class AnalysisBuilder:
             files=schema_result.files,
         )
 
-    def _build_lazyframe(self, files: list[Path], source_type: SourceType) -> pl.LazyFrame:
+    def _build_lazyframe(
+        self, files: list[Path], source_type: SourceType
+    ) -> pl.LazyFrame:
         if source_type == SourceType.COMPILED_DATASET:
             return scan_parquet_dataset(files[0].parent.parent)
         lazyframes = [_scan_file(path) for path in files]
@@ -139,7 +163,9 @@ class AnalysisBuilder:
             return lazyframes[0]
         return pl.concat(lazyframes, how="diagonal_relaxed")
 
-    def _build_statistics(self, lazyframe: pl.LazyFrame, profile_mode: ProfileMode) -> tuple[DatasetStatistics, dict[str, str] | None]:
+    def _build_statistics(
+        self, lazyframe: pl.LazyFrame, profile_mode: ProfileMode
+    ) -> tuple[DatasetStatistics, dict[str, str] | None]:
         schema = lazyframe.collect_schema()
         expressions: list[pl.Expr] = []
         descriptors: list[tuple[str, str, Any]] = []
@@ -148,7 +174,11 @@ class AnalysisBuilder:
             descriptors.append((prefix, name, dtype))
             expressions.extend(
                 [
-                    pl.col(name).is_null().mean().fill_null(0.0).alias(f"{prefix}_null_rate"),
+                    pl.col(name)
+                    .is_null()
+                    .mean()
+                    .fill_null(0.0)
+                    .alias(f"{prefix}_null_rate"),
                     pl.col(name).min().alias(f"{prefix}_min"),
                     pl.col(name).max().alias(f"{prefix}_max"),
                 ]
@@ -162,44 +192,76 @@ class AnalysisBuilder:
                     ]
                 )
             if profile_mode == ProfileMode.DEEP:
-                expressions.append(pl.col(name).approx_n_unique().alias(f"{prefix}_unique"))
+                expressions.append(
+                    pl.col(name).approx_n_unique().alias(f"{prefix}_unique")
+                )
 
-        values = lazyframe.select(expressions).collect().row(0, named=True) if expressions else {}
-        column_hashes = self._build_column_hashes(lazyframe, descriptors) if profile_mode == ProfileMode.DEEP else None
-        histograms = self._build_histograms(lazyframe, descriptors) if profile_mode == ProfileMode.DEEP else {}
+        values = (
+            lazyframe.select(expressions).collect().row(0, named=True)
+            if expressions
+            else {}
+        )
+        column_hashes = (
+            self._build_column_hashes(lazyframe, descriptors)
+            if profile_mode == ProfileMode.DEEP
+            else None
+        )
+        histograms = (
+            self._build_histograms(lazyframe, descriptors)
+            if profile_mode == ProfileMode.DEEP
+            else {}
+        )
 
         columns: dict[str, ColumnStatistics] = {}
         for prefix, name, dtype in descriptors:
             columns[name] = ColumnStatistics(
                 dtype=str(dtype),
                 null_rate=float(values.get(f"{prefix}_null_rate", 0.0) or 0.0),
-                unique_estimate=None if profile_mode != ProfileMode.DEEP else int(values.get(f"{prefix}_unique", 0) or 0),
+                unique_estimate=None
+                if profile_mode != ProfileMode.DEEP
+                else int(values.get(f"{prefix}_unique", 0) or 0),
                 min_value=_normalise_value(values.get(f"{prefix}_min")),
                 max_value=_normalise_value(values.get(f"{prefix}_max")),
-                mean=None if not _is_numeric_dtype(dtype) else _normalise_value(values.get(f"{prefix}_mean")),
-                median=None if not (_is_numeric_dtype(dtype) or _is_temporal_dtype(dtype)) else _normalise_value(values.get(f"{prefix}_median")),
-                stddev=None if not _is_numeric_dtype(dtype) else _normalise_value(values.get(f"{prefix}_stddev")),
+                mean=None
+                if not _is_numeric_dtype(dtype)
+                else _normalise_value(values.get(f"{prefix}_mean")),
+                median=None
+                if not (_is_numeric_dtype(dtype) or _is_temporal_dtype(dtype))
+                else _normalise_value(values.get(f"{prefix}_median")),
+                stddev=None
+                if not _is_numeric_dtype(dtype)
+                else _normalise_value(values.get(f"{prefix}_stddev")),
                 histogram=histograms.get(name),
             )
         return DatasetStatistics(columns=columns), column_hashes
 
-    def _build_column_hashes(self, lazyframe: pl.LazyFrame, descriptors: list[tuple[str, str, Any]]) -> dict[str, str]:
+    def _build_column_hashes(
+        self, lazyframe: pl.LazyFrame, descriptors: list[tuple[str, str, Any]]
+    ) -> dict[str, str]:
         hashes: dict[str, str] = {}
         for _, name, _ in descriptors:
             digest = sha256()
-            series = lazyframe.select(pl.col(name).cast(pl.String).fill_null("<NULL>")).collect().get_column(name)
+            series = (
+                lazyframe.select(pl.col(name).cast(pl.String).fill_null("<NULL>"))
+                .collect()
+                .get_column(name)
+            )
             for value in series.to_list():
                 digest.update(str(value).encode("utf-8"))
                 digest.update(b"\0")
             hashes[name] = digest.hexdigest()
         return hashes
 
-    def _build_histograms(self, lazyframe: pl.LazyFrame, descriptors: list[tuple[str, str, Any]]) -> dict[str, list[tuple[str, int]]]:
+    def _build_histograms(
+        self, lazyframe: pl.LazyFrame, descriptors: list[tuple[str, str, Any]]
+    ) -> dict[str, list[tuple[str, int]]]:
         histograms: dict[str, list[tuple[str, int]]] = {}
         for _, name, dtype in descriptors:
             if not _is_numeric_dtype(dtype):
                 continue
-            series = lazyframe.select(pl.col(name).drop_nulls()).collect().get_column(name)
+            series = (
+                lazyframe.select(pl.col(name).drop_nulls()).collect().get_column(name)
+            )
             values = [float(value) for value in series.to_list()]
             if not values:
                 continue
@@ -211,7 +273,10 @@ class AnalysisBuilder:
             bin_count = min(8, max(2, math.ceil(math.sqrt(len(values)))))
             counts, edges = np.histogram(values, bins=bin_count)
             histograms[name] = [
-                (f"{_format_histogram_bound(float(edges[index]))}..{_format_histogram_bound(float(edges[index + 1]))}", int(count))
+                (
+                    f"{_format_histogram_bound(float(edges[index]))}..{_format_histogram_bound(float(edges[index + 1]))}",
+                    int(count),
+                )
                 for index, count in enumerate(counts.tolist())
             ]
         return histograms
