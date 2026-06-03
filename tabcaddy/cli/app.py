@@ -106,6 +106,10 @@ def diff(
 ) -> None:
     console = create_console()
     generator = GenerateAnalysis()
+    
+    left = Path(left).expanduser().resolve()
+    right = Path(right).expanduser().resolve()
+
     report = DiffDatasets(generator).run(
         resolve_source(left), resolve_source(right), level
     )
