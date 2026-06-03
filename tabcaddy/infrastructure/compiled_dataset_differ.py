@@ -1,0 +1,18 @@
+from __future__ import annotations
+
+from tabcaddy.domain.models import DatasetSource, DiffLevel, DiffReport, ProfileMode
+from tabcaddy.infrastructure.diff_support import compare_analyses
+
+
+class CompiledDatasetDiffer:
+    def __init__(self, generate_analysis) -> None:
+        self._generate_analysis = generate_analysis
+
+    def diff(self, left: DatasetSource, right: DatasetSource, level: DiffLevel) -> DiffReport:
+        profile_mode = ProfileMode.DEEP if level != DiffLevel.METADATA else ProfileMode.STANDARD
+        left_analysis = self._generate_analysis.run(left, profile_mode)
+        right_analysis = self._generate_analysis.run(right, profile_mode)
+        report = compare_analyses(left_analysis, right_analysis, level)
+        if left_analysis.metadata.created_at != right_analysis.metadata.created_at:
+            report.metadata_changes.append("Compiled dataset provenance changed")
+        return report

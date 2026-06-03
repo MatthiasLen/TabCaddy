@@ -1,0 +1,28 @@
+[project]
+name = "tabcaddy"
+version = "0.1.0"
+description = "Dataset-centric CLI toolkit for exploring, compiling, transforming, and diffing tabular data"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "asciichartpy>=1.5.25",
+    "numpy>=2.4.6",
+    "polars>=1.41.2",
+    "pyarrow>=24.0.0",
+    "pydantic>=2.13.4",
+    "pytest>=9.0.3",
+    "rich>=15.0.0",
+    "typer>=0.26.7",
+]
+
+[project.scripts]
+tabcaddy = "tabcaddy.cli.app:main"
+
+[build-system]
+requires = ["hatchling>=1.27.0"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+]
