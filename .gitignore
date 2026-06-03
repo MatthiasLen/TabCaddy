@@ -23,6 +23,7 @@ dist/
 
 # Local dataset and project outputs
 .tabcaddy/
+data/
 
 # Editor and OS files
 .vscode/

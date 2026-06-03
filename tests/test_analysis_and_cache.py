@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -47,12 +46,12 @@ def test_analysis_builder_handles_timezone_aware_datetimes(tmp_path: Path) -> No
     source_file = tmp_path / "events.feather"
     pl.DataFrame(
         {
-            "event_ts": [
-                datetime(2024, 1, 1, 8, 0, tzinfo=timezone.utc),
-                datetime(2024, 1, 2, 9, 30, tzinfo=timezone.utc),
-            ],
+            "event_ts": [1704096000000000, 1704187800000000],
             "value": [1.0, 2.0],
-        }
+        },
+        schema={"event_ts": pl.Int64, "value": pl.Float64},
+    ).with_columns(
+        pl.col("event_ts").cast(pl.Datetime("us")).dt.replace_time_zone("UTC")
     ).write_ipc(source_file)
 
     analysis = (

@@ -184,7 +184,7 @@ def _build_version_telemetry_frame(
             }
             for row in base_rows
         ]
-    )
+    ).with_columns(pl.col("DATE").cast(pl.Datetime("us")).dt.replace_time_zone("UTC"))
 
 
 def _build_mcu_telemetry_frame(
@@ -204,7 +204,7 @@ def _build_mcu_telemetry_frame(
     )
     return pl.DataFrame(
         [{**row, "SN": _maybe_missing(rng, serial, 0.04)} for row in base_rows]
-    )
+    ).with_columns(pl.col("DATE").cast(pl.Datetime("us")).dt.replace_time_zone("UTC"))
 
 
 def _build_common_telemetry_rows(
@@ -233,7 +233,11 @@ def _build_common_telemetry_rows(
         rows.append(
             {
                 "index": index,
-                "DATE": _maybe_missing(rng, timestamp, 0.04),
+                "DATE": _maybe_missing(
+                    rng,
+                    int(timestamp.timestamp() * 1_000_000),
+                    0.04,
+                ),
                 "SUDS": _maybe_missing(rng, suds, 0.03),
                 "VOLTAGE": _maybe_missing(rng, voltage, 0.08),
                 "CURRENT": _maybe_missing(rng, current, 0.08),
