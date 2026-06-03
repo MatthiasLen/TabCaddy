@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+from pathlib import Path
+
 import pytest
+import polars as pl
 
 from tabcaddy.domain.models import ProfileMode
 from tabcaddy.infrastructure.analysis_builder import AnalysisBuilder
@@ -36,4 +40,32 @@ def test_cache_manager_round_trips_analysis(tmp_path, homogeneous_folder) -> Non
     assert (
         loaded.statistics.columns["value"].histogram
         == analysis.statistics.columns["value"].histogram
+    )
+def test_analysis_builder_handles_timezone_aware_datetimes(tmp_path: Path) -> None:
+    source_file = tmp_path / "events.feather"
+    pl.DataFrame(
+        {
+            "event_ts": [
+                datetime(2024, 1, 1, 8, 0, tzinfo=timezone.utc),
+                datetime(2024, 1, 2, 9, 30, tzinfo=timezone.utc),
+            ],
+            "value": [1.0, 2.0],
+        }
+    ).write_ipc(source_file)
+
+    analysis = AnalysisBuilder().build_file_set(
+        files=[source_file],
+        base_path=tmp_path,
+        source_type=resolve_source(source_file).source_type,
+        profile_mode=ProfileMode.STANDARD,
+    ).analysis
+
+    assert analysis.statistics is not None
+    assert (
+        analysis.statistics.columns["event_ts"].min_value
+        == "2024-01-01T08:00:00+00:00"
+    )
+    assert (
+        analysis.statistics.columns["event_ts"].max_value
+        == "2024-01-02T09:30:00+00:00"
     )
