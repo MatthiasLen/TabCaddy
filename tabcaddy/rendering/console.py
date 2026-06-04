@@ -59,7 +59,9 @@ def console_supports_unicode(console: Console) -> bool:
     # Some isolated runners on Windows expose a stream without an encoding.
     # Fall back to process defaults before deciding whether unicode is safe.
     if not encoding:
-        encoding = locale.getpreferredencoding(False) or getattr(sys.stdout, "encoding", None)
+        encoding = locale.getpreferredencoding(False) or getattr(
+            sys.stdout, "encoding", None
+        )
 
     if not encoding:
         return os.name != "nt"
