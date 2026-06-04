@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import locale
+import os
+import sys
 from typing import Any
 
 from rich import box
@@ -45,11 +48,21 @@ class RenderProfile:
 
 
 def console_supports_unicode(console: Console) -> bool:
+    # Rich's legacy Windows renderer may ultimately encode through the active
+    # ANSI code page, which can reject box-drawing characters even when the
+    # stream reports UTF-8. Prefer ASCII rendering in that mode.
+
     encoding = getattr(console.file, "encoding", None) or getattr(
         console, "encoding", None
     )
+
+    # Some isolated runners on Windows expose a stream without an encoding.
+    # Fall back to process defaults before deciding whether unicode is safe.
     if not encoding:
-        return True
+        encoding = locale.getpreferredencoding(False) or getattr(sys.stdout, "encoding", None)
+
+    if not encoding:
+        return os.name != "nt"
     try:
         "█┌".encode(encoding)
     except (LookupError, UnicodeEncodeError):

@@ -21,6 +21,7 @@ class CacheManager:
     def get(
         self, source: DatasetSource, profile_mode: ProfileMode
     ) -> DatasetAnalysis | None:
+        profile_mode = self._normalize_profile_mode(profile_mode)
         cache_file = (
             self._cache_root / f"{self._build_cache_key(source, profile_mode)}.json"
         )
@@ -34,6 +35,7 @@ class CacheManager:
         profile_mode: ProfileMode,
         analysis: DatasetAnalysis,
     ) -> Path:
+        profile_mode = self._normalize_profile_mode(profile_mode)
         self._cache_root.mkdir(parents=True, exist_ok=True)
         cache_file = (
             self._cache_root / f"{self._build_cache_key(source, profile_mode)}.json"
@@ -43,7 +45,20 @@ class CacheManager:
         )
         return cache_file
 
+    def _normalize_profile_mode(self, profile_mode: ProfileMode) -> ProfileMode:
+        """Extract ProfileMode value if wrapped in framework objects like Typer's OptionInfo."""
+        if isinstance(profile_mode, ProfileMode):
+            return profile_mode
+        # Handle framework wrappers (e.g., Typer OptionInfo) with default attribute
+        if hasattr(profile_mode, "default") and isinstance(profile_mode.default, ProfileMode):
+            return profile_mode.default
+        # Fallback: try to convert string representation to ProfileMode
+        if isinstance(profile_mode, str):
+            return ProfileMode(profile_mode)
+        raise TypeError(f"Cannot normalize profile_mode: expected ProfileMode, got {type(profile_mode).__name__}")
+
     def _build_cache_key(self, source: DatasetSource, profile_mode: ProfileMode) -> str:
+        profile_mode = self._normalize_profile_mode(profile_mode)
         fingerprint = {
             "source": str(source.path),
             "type": source.source_type.value,
