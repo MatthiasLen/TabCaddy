@@ -5,6 +5,7 @@ from pathlib import Path
 import polars as pl
 
 from tabcaddy.application.generate_analysis import GenerateAnalysis
+from tabcaddy.application.scaffold_transform import ScaffoldTransform
 from tabcaddy.domain.models import DiffLevel, ProfileMode
 from tabcaddy.infrastructure.analysis_builder import AnalysisBuilder
 from tabcaddy.infrastructure.cache_manager import CacheManager
@@ -102,3 +103,18 @@ def test_diff_logic_reports_changes(tmp_path: Path) -> None:
         "value.max_value" in item or "value.mean" in item
         for item in report.statistics_changes
     )
+
+
+def test_scaffold_transform_raises_if_output_exists(tmp_path: Path) -> None:
+    data = tmp_path / "data"
+    data.mkdir()
+    _write_csv(data / "a.csv", [{"id": 1, "value": 10.0}])
+
+    output_file = tmp_path / "transform.py"
+    output_file.write_text("# existing", encoding="utf-8")
+
+    try:
+        ScaffoldTransform().run(resolve_source(data), output_file)
+        assert False, "Expected FileExistsError when scaffold output already exists"
+    except FileExistsError as error:
+        assert "Please provide another filename." in str(error)

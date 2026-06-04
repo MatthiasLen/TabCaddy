@@ -124,7 +124,10 @@ def scaffold_transform(
     output: Path = typer.Option(Path("transform_template.py"), "--output"),
 ) -> None:
     console = create_console()
-    destination = ScaffoldTransform().run(resolve_source(source), output)
+    try:
+        destination = ScaffoldTransform().run(resolve_source(source), output)
+    except FileExistsError as error:
+        raise typer.BadParameter(str(error), param_hint="--output") from error
     console.print(f"Transform scaffold written to [green]{destination}[/green]")
 
 

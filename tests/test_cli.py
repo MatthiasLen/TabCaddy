@@ -63,6 +63,22 @@ def test_scaffold_transform_populates_analysis_cache(
     assert any(cache_root.glob("*.json"))
 
 
+def test_scaffold_transform_fails_when_output_file_exists(tmp_path: Path) -> None:
+    data = tmp_path / "data"
+    data.mkdir()
+    _write_csv(data / "a.csv", [{"id": 1, "value": 10.0}])
+
+    output_file = tmp_path / "transform.py"
+    output_file.write_text("# existing", encoding="utf-8")
+
+    scaffold_result = runner.invoke(
+        app,
+        ["scaffold-transform", str(data), "--output", str(output_file)],
+    )
+
+    assert scaffold_result.exit_code == 2
+
+
 def test_compile_transform_scaffold_and_diff_commands(tmp_path: Path) -> None:
     left = tmp_path / "left"
     right = tmp_path / "right"
