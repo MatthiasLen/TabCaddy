@@ -127,7 +127,7 @@ tabcaddy transform <input> <transform.py> [output_folder] [--workers N]
 
 Apply a Python transform to a single file or a folder of files. If you omit the output folder, TabCaddy creates one automatically by appending `_transformed`.
 
-Compiled datasets are not accepted as transform inputs in the current version.
+When the input is a compiled dataset, output is written as a compiled dataset as well (`data/*.parquet` plus refreshed `metadata.json`).
 
 Supported transform signatures:
 
