@@ -30,6 +30,39 @@ def test_summary_and_schema_commands(tmp_path: Path) -> None:
     assert "Schema Groups" in schema_result.stdout
 
 
+def test_schema_command_populates_analysis_cache(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    data = tmp_path / "data"
+    data.mkdir()
+    _write_csv(data / "a.csv", [{"id": 1, "value": 10.0}, {"id": 2, "value": 11.0}])
+
+    schema_result = runner.invoke(app, ["schema", str(data)])
+
+    assert schema_result.exit_code == 0
+    cache_root = tmp_path / ".tabcaddy" / "cache"
+    assert cache_root.exists()
+    assert any(cache_root.glob("*.json"))
+
+
+def test_scaffold_transform_populates_analysis_cache(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    data = tmp_path / "data"
+    data.mkdir()
+    _write_csv(data / "a.csv", [{"id": 1, "value": 10.0}, {"id": 2, "value": 11.0}])
+
+    scaffold_result = runner.invoke(
+        app,
+        ["scaffold-transform", str(data), "--output", str(tmp_path / "transform.py")],
+    )
+
+    assert scaffold_result.exit_code == 0
+    cache_root = tmp_path / ".tabcaddy" / "cache"
+    assert cache_root.exists()
+    assert any(cache_root.glob("*.json"))
+
+
 def test_compile_transform_scaffold_and_diff_commands(tmp_path: Path) -> None:
     left = tmp_path / "left"
     right = tmp_path / "right"

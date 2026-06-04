@@ -63,6 +63,8 @@ class CacheManager:
 
     def _build_cache_key(self, source: DatasetSource, profile_mode: ProfileMode) -> str:
         profile_mode = self._normalize_profile_mode(profile_mode)
+
+        # Build a fingerprint of the dataset source that includes file paths, sizes, and modification times
         fingerprint = {
             "source": str(source.path),
             "type": source.source_type.value,
@@ -80,6 +82,8 @@ class CacheManager:
                 for path in iter_dataset_files(source)
             ],
         }
+
+        # Include metadata.json in the fingerprint for compiled datasets, as it can affect profiling results
         if source.source_type == SourceType.COMPILED_DATASET:
             metadata_path = source.path / "metadata.json"
             if metadata_path.exists():
@@ -87,6 +91,8 @@ class CacheManager:
                     "size": metadata_path.stat().st_size,
                     "mtime_ns": metadata_path.stat().st_mtime_ns,
                 }
+
+        # Use a stable hash of the fingerprint as the cache key
         return sha256(
             json.dumps(fingerprint, sort_keys=True).encode("utf-8")
         ).hexdigest()

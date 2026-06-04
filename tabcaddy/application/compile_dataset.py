@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from tqdm.auto import tqdm
+
 from tabcaddy.domain.models import DatasetSource, ProfileMode, SourceType
 from tabcaddy.domain.serialization import analysis_to_dict
 from tabcaddy.infrastructure.analysis_builder import AnalysisBuilder
@@ -30,6 +32,8 @@ class CompileDataset:
         schemas = build_result.analysis.schemas
         if not schemas:
             raise ValueError("No schemas found to compile.")
+        
+        # If multiple schemas are present and no index is specified, prompt the user to choose.
         if len(schemas) > 1 and schema_index is None:
             labels = [
                 f"Schema {index} ({schema.occurrence_count} files)"
@@ -39,34 +43,42 @@ class CompileDataset:
                 "Multiple schemas detected. Re-run with --schema. Available: "
                 + ", ".join(labels)
             )
+            
         chosen_index = schema_index or 1
         if chosen_index < 1 or chosen_index > len(schemas):
             raise ValueError(f"Schema index must be between 1 and {len(schemas)}")
+        
         selected_schema = schemas[chosen_index - 1]
         selected_files = [
             record.path
             for record in build_result.files
             if record.schema_hash == selected_schema.hash
         ]
-        output_path.mkdir(parents=True, exist_ok=True)
+
+        output_path.mkdir(parents=True, exist_ok=False)
+        
+        # Read selected files and write to Parquet dataset
         written = write_parquet_dataset(
-            (_read_dataframe(path) for path in selected_files), output_path
+            (_read_dataframe(path) for path in selected_files), output_path, total=len(selected_files)
         )
+        
+        # Build analysis for the selected files to include in metadata
         selected_analysis = self._analysis_builder.build_file_set(
             files=selected_files,
             base_path=source.path,
             source_type=SourceType.FOLDER,
             profile_mode=ProfileMode.DEEP,
         ).analysis
+        
         payload = analysis_to_dict(selected_analysis)
         payload["compiled"] = {
             "source": str(source.path),
             "selected_schema_hash": selected_schema.hash,
             "written_parts": [str(path.relative_to(output_path)) for path in written],
         }
-        (output_path / "metadata.json").write_text(
-            json.dumps(payload, indent=2), encoding="utf-8"
-        )
+        
+        (output_path / "metadata.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        
         skipped = [
             record.relative_path.as_posix()
             for record in build_result.files

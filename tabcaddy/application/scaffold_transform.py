@@ -3,15 +3,15 @@ from __future__ import annotations
 from pathlib import Path
 
 from tabcaddy.domain.models import DatasetSource, ProfileMode
-from tabcaddy.infrastructure.analysis_builder import AnalysisBuilder
+from tabcaddy.application.generate_analysis import GenerateAnalysis
 
 
 class ScaffoldTransform:
-    def __init__(self, analysis_builder: AnalysisBuilder | None = None) -> None:
-        self._analysis_builder = analysis_builder or AnalysisBuilder()
+    def __init__(self, generate_analysis: GenerateAnalysis | None = None) -> None:
+        self._generate_analysis = generate_analysis or GenerateAnalysis()
 
     def run(self, source: DatasetSource, output_path: Path) -> Path:
-        analysis = self._analysis_builder.build(source, ProfileMode.STANDARD).analysis
+        analysis = self._generate_analysis.run(source, ProfileMode.STANDARD)
         lines = [
             '"""TabCaddy transform scaffold."""',
             "",
