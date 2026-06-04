@@ -33,7 +33,9 @@ def root() -> None:
     """TabCaddy command line interface."""
 
 
-@app.command()
+@app.command(
+    help="Display a summary of the dataset, including file counts and schema overview"
+)
 def summary(
     source: Path,
     profile: ProfileMode = typer.Option(ProfileMode.STANDARD, "--profile"),
@@ -46,7 +48,7 @@ def summary(
     console.print(build_summary_view(analysis, render=render))
 
 
-@app.command()
+@app.command(help="Display the schema of a dataset")
 def schema(
     source: Path,
     profile: ProfileMode = typer.Option(ProfileMode.STANDARD, "--profile"),
@@ -61,7 +63,9 @@ def schema(
     console.print(build_schema_view(analysis, files, render=render))
 
 
-@app.command(name="compile")
+@app.command(
+    name="compile", help="Compile a dataset into a standardized Parquet format"
+)
 def compile_dataset(
     folder: Path,
     output: Path = typer.Option(
@@ -99,7 +103,7 @@ def compile_dataset(
         )
 
 
-@app.command()
+@app.command(help="Transform a dataset using a specified transform script")
 def transform(
     input_path: Path,
     transform_path: Path,
@@ -112,7 +116,9 @@ def transform(
     console.print(f"Transformed files written to [green]{destination}[/green]")
 
 
-@app.command("scaffold-transform")
+@app.command(
+    "scaffold-transform", help="Generate a Python transform scaffold for a dataset"
+)
 def scaffold_transform(
     source: Path,
     output: Path = typer.Option(Path("transform_template.py"), "--output"),
