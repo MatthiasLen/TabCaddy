@@ -5,6 +5,7 @@ from hashlib import sha256
 from pathlib import Path
 
 import polars as pl
+from tqdm import tqdm
 
 from tabcaddy.domain.models import (
     ColumnDefinition,
@@ -75,7 +76,7 @@ class SchemaAnalyzer:
         grouped: dict[str, dict[str, object]] = {}
         records: list[FileSchemaRecord] = []
         warnings: list[str] = []
-        for path in files:
+        for path in tqdm(files, desc="Analyzing files"):
             try:
                 scan = _scan_file(path)
                 schema = scan.collect_schema()

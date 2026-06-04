@@ -54,7 +54,7 @@ def schema(
     source = Path(source).expanduser().resolve()
     console = create_console()
     render = resolve_render_profile(console)
-    
+
     dataset_source = resolve_source(source)
     analysis = GenerateAnalysis().run(dataset_source, profile)
     files = SchemaAnalyzer().analyze(dataset_source).files
@@ -64,25 +64,34 @@ def schema(
 @app.command(name="compile")
 def compile_dataset(
     folder: Path,
-    output: Path = typer.Option(Path("compiled_dataset"), "--output", help="Output path for the compiled dataset"),
-    schema_index: int | None = typer.Option(None, "--schema", help="Index of schema to compile when multiple are detected"),
+    output: Path = typer.Option(
+        Path("compiled_dataset"),
+        "--output",
+        help="Output path for the compiled dataset",
+    ),
+    schema_index: int | None = typer.Option(
+        None, "--schema", help="Index of schema to compile when multiple are detected"
+    ),
     interactive: bool = typer.Option(False, "--interactive"),
 ) -> None:
     console = create_console()
     source = resolve_source(folder)
     selected_schema = schema_index
-    
+
     if interactive and selected_schema is None:
         preview = AnalysisBuilder().build(source, ProfileMode.QUICK)
         if len(preview.analysis.schemas) > 1:
-            console.print(f"Multiple schemas detected ({len(preview.analysis.schemas)}): ")
-            for index, sch in enumerate(preview.analysis.schemas, start=1):
-                console.print(f"  [cyan]Schema {index}[/cyan]: {len(sch.columns)} columns, observed in {sch.occurrence_count} files")
-            selected_schema = typer.prompt(
-                "Choose schema number", type=int
+            console.print(
+                f"Multiple schemas detected ({len(preview.analysis.schemas)}): "
             )
+            for index, sch in enumerate(preview.analysis.schemas, start=1):
+                console.print(
+                    f"  [cyan]Schema {index}[/cyan]: {len(sch.columns)} columns, observed in {sch.occurrence_count} files"
+                )
+            selected_schema = typer.prompt("Choose schema number", type=int)
+
     output_path, skipped = CompileDataset().run(source, output, selected_schema)
-    
+
     console.print(f"Compiled dataset written to [green]{output_path}[/green]")
     if skipped:
         console.print(
