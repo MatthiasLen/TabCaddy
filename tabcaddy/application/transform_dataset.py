@@ -76,7 +76,7 @@ class TransformDataset:
         output_root = output_path or self._default_output_path(source.path)
         if output_root.exists():
             raise FileExistsError(f"Output folder already exists: {output_root}")
-        
+
         output_root.mkdir(parents=True)
         transform, expects_context = self._transform_loader.load(transform_path)
         files = iter_dataset_files(source)
