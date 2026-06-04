@@ -232,6 +232,7 @@ class AnalysisBuilder:
                 # Still capture file records for audit trail
                 files = self._schema_analyzer.analyze(source).files
                 return AnalysisBuildResult(analysis=compiled, files=files)
+
         # For raw data, analyze files from scratch
         return self.build_file_set(
             files=iter_dataset_files(source),
@@ -400,6 +401,7 @@ class AnalysisBuilder:
             if is_numeric:
                 expressions.extend(
                     [
+                        pl.col(name).count().alias(f"{prefix}_count"),
                         pl.col(name).mean().alias(f"{prefix}_mean"),
                         pl.col(name).median().alias(f"{prefix}_median"),
                         pl.col(name).std().alias(f"{prefix}_stddev"),
@@ -428,18 +430,14 @@ class AnalysisBuilder:
             if expressions
             else {}
         )
-        # Compute column content hashes for deep profiles
-        column_hashes = (
-            self._build_column_hashes(lazyframe, descriptors)
-            if profile_mode == ProfileMode.DEEP
-            else None
-        )
-        # Build histograms for numeric columns in deep profiles
-        histograms = (
-            self._build_histograms(lazyframe, descriptors)
-            if profile_mode == ProfileMode.DEEP
-            else {}
-        )
+        # Deep profiles need one additional streamed pass for hashes and histogram bins.
+        if profile_mode == ProfileMode.DEEP:
+            column_hashes, histograms = self._build_deep_profiles(
+                lazyframe, descriptors, values
+            )
+        else:
+            column_hashes = None
+            histograms = {}
 
         # Unpack aggregation results and construct ColumnStatistics for each column
         columns: dict[str, ColumnStatistics] = {}
@@ -479,79 +477,66 @@ class AnalysisBuilder:
             )
         return DatasetStatistics(columns=columns), column_hashes
 
-    def _build_column_hashes(
-        self, lazyframe: pl.LazyFrame, descriptors: list[tuple[str, str, Any]]
-    ) -> dict[str, str]:
-        """Compute SHA256 hash of each column's contents for data integrity.
+    def _build_deep_profiles(
+        self,
+        lazyframe: pl.LazyFrame,
+        descriptors: list[tuple[str, str, Any]],
+        values: dict[str, Any],
+    ) -> tuple[dict[str, str], dict[str, list[tuple[str, int]]]]:
+        """Build deep-profile hashes and histograms with one streamed batch pass.
 
-        Hashes enable detection of data changes without comparing full datasets.
-        Each unique value is serialized to string, null values are marked as "<NULL>",
-        and a null byte is used as a value separator to prevent collision from
-        concatenation (e.g., "ab" vs "a" + "b").
-
-        Args:
-            lazyframe: Lazy DataFrame to hash columns from.
-            descriptors: List of (prefix, name, dtype) tuples for all columns.
-
-        Returns:
-            Dictionary mapping column names to hex-encoded SHA256 hashes.
+        The scalar statistics query already computed min/max and non-null counts.
+        This method reuses those results to avoid rescanning the dataset once per
+        column for hashes and histograms.
         """
-        hashes: dict[str, str] = {}
-        for _, name, _ in descriptors:
-            digest = sha256()
-            # Cast all values to string, replacing null with placeholder
-            series = (
-                lazyframe.select(pl.col(name).cast(pl.String).fill_null("<NULL>"))
-                .collect()
-                .get_column(name)
-            )
-            # Hash each value with null byte separator to prevent concatenation attacks
-            for value in series.to_list():
-                digest.update(str(value).encode("utf-8"))
-                digest.update(b"\0")  # Separator prevents "ab" == "a" + "b"
-            hashes[name] = digest.hexdigest()
-        return hashes
-
-    def _build_histograms(
-        self, lazyframe: pl.LazyFrame, descriptors: list[tuple[str, str, Any]]
-    ) -> dict[str, list[tuple[str, int]]]:
-        """Build histograms for numeric columns to understand value distributions.
-
-        For each numeric column:
-        - Skips columns with all identical values (single-bin histograms)
-        - Determines bin count via sqrt rule: sqrt(n) bounded to [2, 8] bins
-        - Formats bin edges using _format_histogram_bound for readability
-
-        Args:
-            lazyframe: Lazy DataFrame to build histograms from.
-            descriptors: List of (prefix, name, dtype) tuples for all columns.
-
-        Returns:
-            Dictionary mapping numeric column names to lists of (bin_label, count) tuples.
-        """
+        hash_digests = {name: sha256() for _, name, _ in descriptors}
+        string_expressions = [
+            pl.col(name).cast(pl.String).fill_null("<NULL>").alias(name)
+            for _, name, _ in descriptors
+        ]
+        histogram_counts: dict[str, np.ndarray] = {}
+        histogram_edges: dict[str, np.ndarray] = {}
         histograms: dict[str, list[tuple[str, int]]] = {}
-        for _, name, dtype in descriptors:
-            # Only build histograms for numeric columns
+
+        for prefix, name, dtype in descriptors:
             if not _is_numeric_dtype(dtype):
                 continue
-            # Collect non-null values
-            series = (
-                lazyframe.select(pl.col(name).drop_nulls()).collect().get_column(name)
-            )
-            values = [float(value) for value in series.to_list()]
-            # Skip columns with no data
-            if not values:
+            non_null_count = int(values.get(f"{prefix}_count", 0) or 0)
+            if non_null_count == 0:
                 continue
-            lower = min(values)
-            upper = max(values)
-            # Single-value columns get one bin
+            lower = float(values[f"{prefix}_min"])
+            upper = float(values[f"{prefix}_max"])
             if math.isclose(lower, upper, rel_tol=1e-9, abs_tol=1e-9):
-                histograms[name] = [(_format_histogram_bound(lower), len(values))]
+                histograms[name] = [(_format_histogram_bound(lower), non_null_count)]
                 continue
-            # Use sqrt rule for bin count, bounded to [2, 8] for readability
-            bin_count = min(8, max(2, math.ceil(math.sqrt(len(values)))))
-            # Compute histogram and format bin labels
-            counts, edges = np.histogram(values, bins=bin_count)
+            bin_count = min(8, max(2, math.ceil(math.sqrt(non_null_count))))
+            histogram_edges[name] = np.linspace(lower, upper, num=bin_count + 1)
+            histogram_counts[name] = np.zeros(bin_count, dtype=np.int64)
+
+        for batch in lazyframe.collect_batches():
+            if batch.height == 0:
+                continue
+            string_batch = batch.select(string_expressions)
+            for name, digest in hash_digests.items():
+                for value in string_batch.get_column(name).to_list():
+                    digest.update(str(value).encode("utf-8"))
+                    digest.update(b"\0")
+            for name, counts in histogram_counts.items():
+                series = batch.get_column(name).drop_nulls()
+                if series.len() == 0:
+                    continue
+                numeric_values = np.asarray(
+                    series.cast(pl.Float64).to_numpy(), dtype=float
+                )
+                edges = histogram_edges[name]
+                bucket_indexes = (
+                    np.searchsorted(edges, numeric_values, side="right") - 1
+                )
+                bucket_indexes = np.clip(bucket_indexes, 0, len(counts) - 1)
+                counts += np.bincount(bucket_indexes, minlength=len(counts))
+
+        for name, counts in histogram_counts.items():
+            edges = histogram_edges[name]
             histograms[name] = [
                 (
                     f"{_format_histogram_bound(float(edges[index]))}..{_format_histogram_bound(float(edges[index + 1]))}",
@@ -559,4 +544,7 @@ class AnalysisBuilder:
                 )
                 for index, count in enumerate(counts.tolist())
             ]
-        return histograms
+        return (
+            {name: digest.hexdigest() for name, digest in hash_digests.items()},
+            histograms,
+        )

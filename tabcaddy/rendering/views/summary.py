@@ -1,18 +1,23 @@
 from __future__ import annotations
 
 from rich.console import Group
-from rich.panel import Panel
-from rich.table import Table
 from rich.text import Text
 
 from tabcaddy.domain.models import DatasetAnalysis
 from tabcaddy.rendering.charts.bar_chart import render_bar_chart
+from tabcaddy.rendering.console import RenderProfile
+from tabcaddy.rendering.console import resolve_render_profile
 
 
-def build_summary_view(analysis: DatasetAnalysis):
+def build_summary_view(
+    analysis: DatasetAnalysis,
+    *,
+    render: RenderProfile | None = None,
+):
+    render = resolve_render_profile() if render is None else render
     blocks: list[object] = []
 
-    metadata = Table(title="Metadata", expand=False)
+    metadata = render.table(title="Metadata", expand=False)
     metadata.add_column("Field", style="cyan")
     metadata.add_column("Value", style="white")
     metadata.add_row("Files", str(analysis.metadata.source_file_count))
@@ -22,14 +27,13 @@ def build_summary_view(analysis: DatasetAnalysis):
     metadata.add_row("Created", analysis.metadata.created_at.isoformat())
     blocks.append(metadata)
 
-    schema_table = Table(title="Schema Overview", expand=True)
-    schema_table.add_column("Schema", style="cyan")
-    schema_table.add_column("Files", justify="right")
-    schema_table.add_column("Columns")
+    schema_table = render.table(title="Schema Overview", expand=True)
+    schema_table.add_column("Schema", style="cyan", min_width=4)
+    schema_table.add_column("Files", justify="right", min_width=4)
+    schema_table.add_column("Columns", no_wrap=True)
+
     for index, schema in enumerate(analysis.schemas, start=1):
-        sample = ", ".join(column.name for column in schema.columns[:4])
-        if len(schema.columns) > 4:
-            sample += ", ..."
+        sample = ", ".join(column.name for column in schema.columns)
         schema_table.add_row(f"Schema {index}", str(schema.occurrence_count), sample)
     blocks.append(schema_table)
 
@@ -37,15 +41,21 @@ def build_summary_view(analysis: DatasetAnalysis):
         [
             (f"Schema {index}", schema.occurrence_count)
             for index, schema in enumerate(analysis.schemas, start=1)
-        ]
+        ],
+        fill=render.bar_fill,
     )
+
     if distribution:
         blocks.append(
-            Panel(distribution, title="Schema Distribution", border_style="blue")
+            render.panel(
+                distribution,
+                title="Schema Distribution",
+                border_style="blue",
+            )
         )
 
     if analysis.statistics is not None:
-        stats = Table(title="Statistics", expand=True)
+        stats = render.table(title="Statistics", expand=True)
         stats.add_column("Column", style="cyan")
         stats.add_column("Type")
         stats.add_column("Null %", justify="right")
@@ -63,7 +73,8 @@ def build_summary_view(analysis: DatasetAnalysis):
             )
         blocks.append(stats)
 
-        temporal = Table(title="Date Ranges", expand=True)
+        # Add a separate table for temporal columns to avoid cluttering the main stats table
+        temporal = render.table(title="Date Ranges", expand=True)
         temporal.add_column("Column", style="cyan")
         temporal.add_column("Min")
         temporal.add_column("Max")
@@ -79,24 +90,51 @@ def build_summary_view(analysis: DatasetAnalysis):
         if added:
             blocks.append(temporal)
 
-        for name, column in list(analysis.statistics.columns.items())[:3]:
+        # Show histograms for the first few columns that have them, to give a sense of value distributions without overwhelming the user
+        num_cols = len(analysis.statistics.columns.items())
+        num_histograms = 0
+        max_histograms = 10  # Limit the number of histograms shown in the summary
+
+        for name, column in list(analysis.statistics.columns.items()):
             if column.histogram:
+                num_histograms += 1
                 blocks.append(
-                    Panel(
-                        render_bar_chart(column.histogram, width=18),
+                    render.panel(
+                        render_bar_chart(
+                            column.histogram, width=18, fill=render.bar_fill
+                        ),
                         title=f"Histogram: {name}",
                         border_style="blue",
                     )
                 )
 
+            if num_histograms >= max_histograms:
+                blocks.append(
+                    Text(
+                        f"Showing histograms for {num_histograms} of {num_cols} columns. Use the 'schema' command for detailed histograms of all columns.",
+                        style="dim",
+                    )
+                )
+                break
+
     if analysis.warnings:
         warning_text = Text(
             "\n".join(f"- {warning}" for warning in analysis.warnings), style="yellow"
         )
-        blocks.append(Panel(warning_text, title="Warnings", border_style="yellow"))
+        blocks.append(
+            render.panel(
+                warning_text,
+                title="Warnings",
+                border_style="yellow",
+            )
+        )
     else:
         blocks.append(
-            Panel("No warnings detected.", title="Warnings", border_style="green")
+            render.panel(
+                "No warnings detected.",
+                title="Warnings",
+                border_style="green",
+            )
         )
 
     return Group(*blocks)

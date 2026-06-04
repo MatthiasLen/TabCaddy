@@ -1,29 +1,34 @@
 from __future__ import annotations
 
 from rich.console import Group
-from rich.panel import Panel
-from rich.table import Table
 
 from tabcaddy.domain.models import DatasetAnalysis
-from tabcaddy.rendering.charts.bar_chart import render_bar_chart
 from tabcaddy.infrastructure.schema_analyzer import FileSchemaRecord
 from tabcaddy.infrastructure.schema_analyzer import schema_type_changes
+from tabcaddy.rendering.charts.bar_chart import render_bar_chart
+from tabcaddy.rendering.console import RenderProfile
+from tabcaddy.rendering.console import resolve_render_profile
 
 
-def build_schema_view(analysis: DatasetAnalysis, files: list[FileSchemaRecord]):
+def build_schema_view(
+    analysis: DatasetAnalysis,
+    files: list[FileSchemaRecord],
+    *,
+    render: RenderProfile | None = None,
+):
+    render = resolve_render_profile() if render is None else render
     blocks: list[object] = []
 
-    schemas = Table(title="Schema Groups", expand=True)
-    schemas.add_column("Schema", style="cyan")
-    schemas.add_column("Files", justify="right")
-    schemas.add_column("Hash")
-    schemas.add_column("Columns")
+    schemas = render.table(title="Schema Groups", expand=True)
+    schemas.add_column("Schema", style="cyan", min_width=4)
+    schemas.add_column("Files", justify="right", min_width=4)
+    schemas.add_column("Hash", min_width=4)
+    schemas.add_column("Columns", no_wrap=False)
+
     for index, schema in enumerate(analysis.schemas, start=1):
         columns = ", ".join(
-            f"{column.name}:{column.dtype}" for column in schema.columns[:4]
+            f"{column.name}:{column.dtype}" for column in schema.columns
         )
-        if len(schema.columns) > 4:
-            columns += ", ..."
         schemas.add_row(
             f"Schema {index}", str(schema.occurrence_count), schema.hash[:12], columns
         )
@@ -33,16 +38,22 @@ def build_schema_view(analysis: DatasetAnalysis, files: list[FileSchemaRecord]):
         [
             (f"Schema {index}", schema.occurrence_count)
             for index, schema in enumerate(analysis.schemas, start=1)
-        ]
+        ],
+        fill=render.bar_fill,
     )
+
     if distribution:
         blocks.append(
-            Panel(distribution, title="Occurrence Distribution", border_style="blue")
+            render.panel(
+                distribution,
+                title="Occurrence Distribution",
+                border_style="blue",
+            )
         )
 
     drift = schema_type_changes(analysis.schemas)
     if drift:
-        changes = Table(title="Type Changes", expand=True)
+        changes = render.table(title="Type Changes", expand=True)
         changes.add_column("Column", style="cyan")
         changes.add_column("Observed Types")
         for name, dtypes in sorted(drift.items()):
@@ -53,7 +64,9 @@ def build_schema_view(analysis: DatasetAnalysis, files: list[FileSchemaRecord]):
         dominant_hash = analysis.schemas[0].hash
         violations = [record for record in files if record.schema_hash != dominant_hash]
         if violations:
-            violating = Table(title="Files Violating Dominant Schema", expand=True)
+            violating = render.table(
+                title="Files Violating Dominant Schema", expand=True
+            )
             violating.add_column("File", style="cyan")
             violating.add_column("Schema")
             violating.add_column("Rows", justify="right")

@@ -24,9 +24,13 @@ class GenerateAnalysis:
             compiled = self._analysis_builder.load_compiled_analysis(source)
             if compiled is not None:
                 return compiled
+
         cached = self._cache_manager.get(source, profile_mode)
+
         if cached is not None:
             return cached
+
         analysis = self._analysis_builder.build(source, profile_mode).analysis
         self._cache_manager.set(source, profile_mode, analysis)
+
         return analysis

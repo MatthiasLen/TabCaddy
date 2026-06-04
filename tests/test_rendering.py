@@ -9,7 +9,10 @@ from tabcaddy.domain.models import DatasetAnalysis
 from tabcaddy.domain.models import DatasetMetadata
 from tabcaddy.domain.models import DatasetStatistics
 from tabcaddy.domain.models import SchemaSignature
+from tabcaddy.infrastructure.schema_analyzer import FileSchemaRecord
 from tabcaddy.rendering.console import create_console
+from tabcaddy.rendering.console import RenderProfile
+from tabcaddy.rendering.views.schema import build_schema_view
 from tabcaddy.rendering.views.summary import build_summary_view
 
 
@@ -56,3 +59,48 @@ def test_summary_render_snapshot() -> None:
         encoding="utf-8"
     )
     assert output == snapshot
+
+
+def test_schema_render_ascii_fallback_is_cp1252_safe() -> None:
+    analysis = DatasetAnalysis(
+        metadata=DatasetMetadata(
+            version=1,
+            created_at=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            row_count=3,
+            column_count=2,
+            source_file_count=2,
+            schema_hash="abc123",
+            column_hashes=None,
+        ),
+        schemas=[
+            SchemaSignature(
+                columns=[
+                    ColumnDefinition("id", "Int64"),
+                    ColumnDefinition("value", "Float64"),
+                ],
+                hash="abc123",
+                occurrence_count=2,
+            )
+        ],
+        statistics=None,
+        warnings=[],
+    )
+    files = [
+        FileSchemaRecord(
+            path=Path("a.csv"),
+            relative_path=Path("a.csv"),
+            schema_hash="abc123",
+            columns=analysis.schemas[0].columns,
+            row_count=2,
+        )
+    ]
+
+    console = create_console(record=True, width=100, legacy_windows=False)
+    console.print(
+        build_schema_view(analysis, files, render=RenderProfile(ascii_only=True))
+    )
+    output = console.export_text()
+
+    output.encode("cp1252")
+    assert "#" in output
+    assert "█" not in output
