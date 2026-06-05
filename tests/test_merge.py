@@ -39,7 +39,9 @@ def test_merge_file_to_file_row_deduplicates_exact_rows(tmp_path: Path) -> None:
     _write_frame(source, [{"id": 2, "value": 20}, {"id": 3, "value": 30}])
     _write_frame(target, [{"id": 1, "value": 10}, {"id": 2, "value": 20}])
 
-    result = runner.invoke(app, ["merge", str(source), str(target), "--out", str(output)])
+    result = runner.invoke(
+        app, ["merge", str(source), str(target), "--out", str(output)]
+    )
 
     assert result.exit_code == 0
     assert output.exists()
@@ -72,7 +74,9 @@ def test_merge_key_conflict_fails_without_writing_output(tmp_path: Path) -> None
     assert "Conflicting duplicate key" in result.stdout
 
 
-def test_merge_file_into_folder_inplace_copies_when_no_match_exists(tmp_path: Path) -> None:
+def test_merge_file_into_folder_inplace_copies_when_no_match_exists(
+    tmp_path: Path,
+) -> None:
     source = tmp_path / "incoming.csv"
     archive = tmp_path / "archive"
     archive.mkdir()
@@ -96,9 +100,13 @@ def test_merge_folder_to_folder_out_dir_merges_matches_and_copies_missing(
     source_dir.mkdir()
     target_dir.mkdir()
 
-    _write_frame(source_dir / "sales.csv", [{"id": 2, "value": 20}, {"id": 3, "value": 30}])
+    _write_frame(
+        source_dir / "sales.csv", [{"id": 2, "value": 20}, {"id": 3, "value": 30}]
+    )
     _write_frame(source_dir / "new.csv", [{"id": 9, "value": 90}])
-    _write_frame(target_dir / "sales.csv", [{"id": 1, "value": 10}, {"id": 2, "value": 20}])
+    _write_frame(
+        target_dir / "sales.csv", [{"id": 1, "value": 10}, {"id": 2, "value": 20}]
+    )
 
     result = runner.invoke(
         app,
@@ -121,7 +129,9 @@ def test_merge_ignore_filetype_casts_csv_into_binary_target(tmp_path: Path) -> N
     archive.mkdir()
 
     _write_frame(source, [{"id": "2", "value": "20"}, {"id": "3", "value": "30"}])
-    _write_frame(archive / "sales.parquet", [{"id": 1, "value": 10}, {"id": 2, "value": 20}])
+    _write_frame(
+        archive / "sales.parquet", [{"id": 1, "value": 10}, {"id": 2, "value": 20}]
+    )
 
     result = runner.invoke(
         app,
