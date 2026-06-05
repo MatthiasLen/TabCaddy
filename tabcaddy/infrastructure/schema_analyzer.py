@@ -76,7 +76,7 @@ class SchemaAnalyzer:
         grouped: dict[str, dict[str, object]] = {}
         records: list[FileSchemaRecord] = []
         warnings: list[str] = []
-        for path in tqdm(files, desc="Analyzing files"):
+        for path in tqdm(files, desc="Running schema analysis", unit="files"):
             try:
                 scan = _scan_file(path)
                 schema = scan.collect_schema()

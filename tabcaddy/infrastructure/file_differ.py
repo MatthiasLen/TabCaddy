@@ -14,6 +14,6 @@ class FileDiffer:
         profile_mode = (
             ProfileMode.DEEP if level != DiffLevel.METADATA else ProfileMode.STANDARD
         )
-        left_analysis = self._generate_analysis.run(left, profile_mode)
-        right_analysis = self._generate_analysis.run(right, profile_mode)
+        left_analysis = self._generate_analysis.run(left, profile_mode).analysis
+        right_analysis = self._generate_analysis.run(right, profile_mode).analysis
         return compare_analyses(left_analysis, right_analysis, level)

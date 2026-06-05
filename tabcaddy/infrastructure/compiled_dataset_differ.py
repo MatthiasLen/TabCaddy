@@ -14,8 +14,8 @@ class CompiledDatasetDiffer:
         profile_mode = (
             ProfileMode.DEEP if level != DiffLevel.METADATA else ProfileMode.STANDARD
         )
-        left_analysis = self._generate_analysis.run(left, profile_mode)
-        right_analysis = self._generate_analysis.run(right, profile_mode)
+        left_analysis = self._generate_analysis.run(left, profile_mode).analysis
+        right_analysis = self._generate_analysis.run(right, profile_mode).analysis
         report = compare_analyses(left_analysis, right_analysis, level)
         if left_analysis.metadata.created_at != right_analysis.metadata.created_at:
             report.metadata_changes.append("Compiled dataset provenance changed")

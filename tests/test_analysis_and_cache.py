@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
 import polars as pl
 
+from tabcaddy.application.generate_analysis import GenerateAnalysis
 from tabcaddy.domain.models import ProfileMode
 from tabcaddy.infrastructure.analysis_builder import AnalysisBuilder
 from tabcaddy.infrastructure.cache_manager import CacheManager
@@ -27,18 +29,19 @@ def test_analysis_builder_computes_metadata_and_statistics(homogeneous_folder) -
 
 def test_cache_manager_round_trips_analysis(tmp_path, homogeneous_folder) -> None:
     source = resolve_source(homogeneous_folder)
-    analysis = AnalysisBuilder().build(source, ProfileMode.DEEP).analysis
+    result = AnalysisBuilder().build(source, ProfileMode.DEEP)
     cache = CacheManager(tmp_path / ".tabcaddy" / "cache")
-    cache.set(source, ProfileMode.DEEP, analysis)
+    cache.set(source, ProfileMode.DEEP, result)
     loaded = cache.get(source, ProfileMode.DEEP)
     assert loaded is not None
-    assert loaded.metadata.row_count == analysis.metadata.row_count
-    assert loaded.schemas[0].hash == analysis.schemas[0].hash
-    assert loaded.statistics is not None
-    assert analysis.statistics is not None
+    assert loaded.analysis.metadata.row_count == result.analysis.metadata.row_count
+    assert loaded.analysis.schemas[0].hash == result.analysis.schemas[0].hash
+    assert loaded.analysis.statistics is not None
+    assert result.analysis.statistics is not None
+    assert loaded.files == result.files
     assert (
-        loaded.statistics.columns["value"].histogram
-        == analysis.statistics.columns["value"].histogram
+        loaded.analysis.statistics.columns["value"].histogram
+        == result.analysis.statistics.columns["value"].histogram
     )
 
 
@@ -72,3 +75,47 @@ def test_analysis_builder_handles_timezone_aware_datetimes(tmp_path: Path) -> No
     assert (
         analysis.statistics.columns["event_ts"].max_value == "2024-01-02T09:30:00+00:00"
     )
+
+
+def test_generate_analysis_uses_cached_build_result(
+    tmp_path, homogeneous_folder
+) -> None:
+    source = resolve_source(homogeneous_folder)
+    cached_result = AnalysisBuilder().build(source, ProfileMode.STANDARD)
+    cache = CacheManager(tmp_path / ".tabcaddy" / "cache")
+    cache.set(source, ProfileMode.STANDARD, cached_result)
+
+    class FailOnBuildAnalysisBuilder:
+        def build(self, source, profile_mode):
+            raise AssertionError("cache hit should not rebuild analysis")
+
+    result = GenerateAnalysis(
+        analysis_builder=FailOnBuildAnalysisBuilder(),
+        cache_manager=cache,
+    ).run(source, ProfileMode.STANDARD)
+
+    assert result == cached_result
+
+
+def test_generate_analysis_invalidates_stale_cache_payload(
+    tmp_path, homogeneous_folder
+) -> None:
+    source = resolve_source(homogeneous_folder)
+    cache = CacheManager(tmp_path / ".tabcaddy" / "cache")
+    cache_file = cache.cache_file(source, ProfileMode.QUICK)
+    cache_file.parent.mkdir(parents=True, exist_ok=True)
+    cache_file.write_text(
+        json.dumps({"metadata": {"version": 0}}),
+        encoding="utf-8",
+    )
+
+    result = GenerateAnalysis(
+        analysis_builder=AnalysisBuilder(),
+        cache_manager=cache,
+    ).run(source, ProfileMode.QUICK)
+
+    assert result.files
+    assert result.analysis.schemas
+    assert cache_file.exists()
+    payload = json.loads(cache_file.read_text(encoding="utf-8"))
+    assert payload["format_version"] == CacheManager.CACHE_FORMAT_VERSION

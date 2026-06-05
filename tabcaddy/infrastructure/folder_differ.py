@@ -54,8 +54,8 @@ class FolderDiffer:
                 if level != DiffLevel.METADATA
                 else ProfileMode.STANDARD
             )
-            left_analysis = self._generate_analysis.run(left, profile_mode)
-            right_analysis = self._generate_analysis.run(right, profile_mode)
+            left_analysis = self._generate_analysis.run(left, profile_mode).analysis
+            right_analysis = self._generate_analysis.run(right, profile_mode).analysis
             content_report = compare_analyses(left_analysis, right_analysis, level)
             report.metadata_changes.extend(content_report.metadata_changes)
             report.schema_changes = content_report.schema_changes

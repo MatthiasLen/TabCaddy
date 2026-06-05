@@ -5,45 +5,100 @@ from hashlib import sha256
 from pathlib import Path
 
 from tabcaddy.domain.models import (
-    DatasetAnalysis,
+    ColumnDefinition,
     DatasetSource,
     ProfileMode,
     SourceType,
 )
 from tabcaddy.domain.serialization import analysis_from_dict, analysis_to_dict
+from tabcaddy.infrastructure.analysis_builder import AnalysisBuildResult
+from tabcaddy.infrastructure.schema_analyzer import FileSchemaRecord
 from tabcaddy.infrastructure.source_resolver import iter_dataset_files
 
 
 class CacheManager:
+    CACHE_FORMAT_VERSION = 1
+
     def __init__(self, cache_root: Path | None = None) -> None:
         self._cache_root = cache_root or Path(".tabcaddy") / "cache"
 
     def get(
         self, source: DatasetSource, profile_mode: ProfileMode
-    ) -> DatasetAnalysis | None:
-        profile_mode = self._normalize_profile_mode(profile_mode)
-        cache_file = (
-            self._cache_root / f"{self._build_cache_key(source, profile_mode)}.json"
-        )
+    ) -> AnalysisBuildResult | None:
+        cache_file = self.cache_file(source, profile_mode)
         if not cache_file.exists():
             return None
-        return analysis_from_dict(json.loads(cache_file.read_text(encoding="utf-8")))
+        try:
+            payload = json.loads(cache_file.read_text(encoding="utf-8"))
+            return self._result_from_payload(payload)
+        except (OSError, ValueError, TypeError, KeyError):
+            cache_file.unlink(missing_ok=True)
+            return None
 
     def set(
         self,
         source: DatasetSource,
         profile_mode: ProfileMode,
-        analysis: DatasetAnalysis,
+        result: AnalysisBuildResult,
     ) -> Path:
-        profile_mode = self._normalize_profile_mode(profile_mode)
         self._cache_root.mkdir(parents=True, exist_ok=True)
-        cache_file = (
-            self._cache_root / f"{self._build_cache_key(source, profile_mode)}.json"
-        )
+        cache_file = self.cache_file(source, profile_mode)
         cache_file.write_text(
-            json.dumps(analysis_to_dict(analysis), indent=2), encoding="utf-8"
+            json.dumps(
+                {
+                    "format_version": self.CACHE_FORMAT_VERSION,
+                    "analysis": analysis_to_dict(result.analysis),
+                    "files": [
+                        {
+                            "path": str(record.path),
+                            "relative_path": str(record.relative_path),
+                            "schema_hash": record.schema_hash,
+                            "columns": [
+                                {"name": column.name, "dtype": column.dtype}
+                                for column in record.columns
+                            ],
+                            "row_count": record.row_count,
+                        }
+                        for record in result.files
+                    ],
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
         )
         return cache_file
+
+    def cache_file(self, source: DatasetSource, profile_mode: ProfileMode) -> Path:
+        profile_mode = self._normalize_profile_mode(profile_mode)
+        return self._cache_root / f"{self._build_cache_key(source, profile_mode)}.json"
+
+    def _result_from_payload(self, payload: object) -> AnalysisBuildResult:
+        if not isinstance(payload, dict):
+            raise TypeError("Cache payload must be a JSON object")
+        if payload.get("format_version") != self.CACHE_FORMAT_VERSION:
+            raise ValueError("Unsupported cache format version")
+
+        return AnalysisBuildResult(
+            analysis=analysis_from_dict(payload["analysis"]),
+            files=[self._file_record_from_payload(item) for item in payload["files"]],
+        )
+
+    def _file_record_from_payload(self, payload: object) -> FileSchemaRecord:
+        if not isinstance(payload, dict):
+            raise TypeError("File record payload must be a JSON object")
+        return FileSchemaRecord(
+            path=Path(payload["path"]),
+            relative_path=Path(payload["relative_path"]),
+            schema_hash=payload["schema_hash"],
+            columns=[
+                ColumnDefinition(
+                    name=column["name"],
+                    dtype=column["dtype"],
+                )
+                for column in payload["columns"]
+            ],
+            row_count=payload["row_count"],
+        )
 
     def _normalize_profile_mode(self, profile_mode: ProfileMode) -> ProfileMode:
         """Extract ProfileMode value if wrapped in framework objects like Typer's OptionInfo."""

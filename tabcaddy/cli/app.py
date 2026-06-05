@@ -12,7 +12,6 @@ from tabcaddy.application.transform_dataset import TransformDataset
 from tabcaddy.domain.models import DiffLevel
 from tabcaddy.domain.models import ProfileMode
 from tabcaddy.infrastructure.analysis_builder import AnalysisBuilder
-from tabcaddy.infrastructure.schema_analyzer import SchemaAnalyzer
 from tabcaddy.infrastructure.source_resolver import resolve_source
 from tabcaddy.rendering.console import create_console
 from tabcaddy.rendering.console import resolve_render_profile
@@ -44,23 +43,20 @@ def summary(
     console = create_console()
     render = resolve_render_profile(console)
 
-    analysis = GenerateAnalysis().run(resolve_source(source), profile)
-    console.print(build_summary_view(analysis, render=render))
+    result = GenerateAnalysis().run(resolve_source(source), profile)
+    console.print(build_summary_view(result.analysis, render=render))
 
 
 @app.command(help="Display the schema of a dataset")
 def schema(
     source: Path,
-    profile: ProfileMode = typer.Option(ProfileMode.STANDARD, "--profile"),
 ) -> None:
     source = Path(source).expanduser().resolve()
     console = create_console()
     render = resolve_render_profile(console)
 
-    dataset_source = resolve_source(source)
-    analysis = GenerateAnalysis().run(dataset_source, profile)
-    files = SchemaAnalyzer().analyze(dataset_source).files
-    console.print(build_schema_view(analysis, files, render=render))
+    result = GenerateAnalysis().run(resolve_source(source), ProfileMode.QUICK)
+    console.print(build_schema_view(result.analysis, result.files, render=render))
 
 
 @app.command(

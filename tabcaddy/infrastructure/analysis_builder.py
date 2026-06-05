@@ -83,7 +83,14 @@ def _is_numeric_dtype(dtype: Any) -> bool:
 
 
 def _is_temporal_dtype(dtype: Any) -> bool:
-    return any(token in str(dtype) for token in ("Date", "Datetime", "Time"))
+    probe = getattr(dtype, "is_temporal", None)
+    if callable(probe):
+        return bool(probe())
+    if probe is not None:
+        return bool(probe)
+    return any(
+        token in str(dtype) for token in ("Date", "Datetime", "Time", "Duration")
+    )
 
 
 def _normalise_value(value: Any) -> Any:
@@ -125,32 +132,6 @@ def _get_temporal_format(dtype: Any) -> str:
     if "Time" in dtype_str:
         return "%H:%M:%S"
     return "%Y-%m-%d"  # Fallback for unknown temporal types
-
-
-def _normalise_temporal_string(value: Any) -> Any:
-    """Normalize temporal string from Polars dt.to_string() format to ISO 8601.
-
-    Polars formats datetime strings as 'YYYY-MM-DDTHH:MM:SS±HH:MM' which matches
-    ISO 8601. This function handles edge cases like stripping trailing zeros
-    from fractional seconds if present.
-    """
-    if not isinstance(value, str):
-        return value
-    # Convert space-separated to ISO format if needed
-    if " " in value and "T" not in value:
-        left, right = value.split(" ", 1)
-        if "-" in left and ":" in right:
-            value = f"{left}T{right}"
-    # Strip microseconds if all zeros
-    if "." not in value:
-        return value
-    prefix, suffix = value.split(".", 1)
-    for index, char in enumerate(suffix):
-        if not char.isdigit():
-            fractional = suffix[:index]
-            rest = suffix[index:]
-            return prefix + rest if fractional == "000000" else value
-    return value
 
 
 def _format_histogram_bound(value: float) -> str:
@@ -198,17 +179,19 @@ class AnalysisBuilder:
 
         Compiled datasets store their analysis in metadata.json at the root.
         This allows rapid re-analysis without recomputing statistics.
-
-        Args:
-            source: The dataset source pointing to a compiled dataset.
-
-        Returns:
-            The deserialized DatasetAnalysis if metadata.json exists, None otherwise.
         """
         metadata_path = source.path / "metadata.json"
         if not metadata_path.exists():
             return None
         return analysis_from_dict(json.loads(metadata_path.read_text(encoding="utf-8")))
+
+    def load_compiled_result(self, source: DatasetSource) -> AnalysisBuildResult | None:
+        """Load a pre-computed analysis and pair it with current file records."""
+        compiled = self.load_compiled_analysis(source)
+        if compiled is None:
+            return None
+        schema_result = self._schema_analyzer.analyze(source)
+        return AnalysisBuildResult(analysis=compiled, files=schema_result.files)
 
     def build(
         self, source: DatasetSource, profile_mode: ProfileMode
@@ -225,15 +208,11 @@ class AnalysisBuilder:
         Returns:
             An AnalysisBuildResult with computed analysis and file records.
         """
-        # For compiled datasets, try to load pre-computed analysis
         if source.source_type == SourceType.COMPILED_DATASET:
-            compiled = self.load_compiled_analysis(source)
-            if compiled is not None:
-                # Still capture file records for audit trail
-                files = self._schema_analyzer.analyze(source).files
-                return AnalysisBuildResult(analysis=compiled, files=files)
+            compiled_result = self.load_compiled_result(source)
+            if compiled_result is not None:
+                return compiled_result
 
-        # For raw data, analyze files from scratch
         return self.build_file_set(
             files=iter_dataset_files(source),
             base_path=source.path,
@@ -358,10 +337,6 @@ class AnalysisBuilder:
         schema = lazyframe.collect_schema()
         expressions: list[pl.Expr] = []
         descriptors: list[tuple[str, str, Any]] = []
-        # Cache dtype classifications to avoid redundant checks
-        dtype_flags: dict[
-            str, tuple[bool, bool]
-        ] = {}  # Maps prefix -> (is_numeric, is_temporal)
 
         # Process each column in the schema
         for index, (name, dtype) in enumerate(schema.items()):
@@ -369,8 +344,6 @@ class AnalysisBuilder:
             prefix = f"c{index}"
             is_numeric = _is_numeric_dtype(dtype)
             is_temporal = _is_temporal_dtype(dtype)
-            # Cache for use during result unpacking
-            dtype_flags[prefix] = (is_numeric, is_temporal)
             descriptors.append((prefix, name, dtype))
 
             # Universal statistics: computed for all columns
@@ -442,8 +415,9 @@ class AnalysisBuilder:
         # Unpack aggregation results and construct ColumnStatistics for each column
         columns: dict[str, ColumnStatistics] = {}
         for prefix, name, dtype in descriptors:
-            is_numeric, is_temporal = dtype_flags[prefix]
-            # Apply appropriate normalization based on column type
+            is_numeric = _is_numeric_dtype(dtype)
+            is_temporal = _is_temporal_dtype(dtype)
+            # Temporal min/max/median are already ISO strings from dt.to_string()
             columns[name] = ColumnStatistics(
                 dtype=str(dtype),
                 null_rate=float(values.get(f"{prefix}_null_rate", 0.0) or 0.0),
@@ -451,12 +425,12 @@ class AnalysisBuilder:
                 if profile_mode != ProfileMode.DEEP
                 else int(values.get(f"{prefix}_unique", 0) or 0),
                 min_value=(
-                    _normalise_temporal_string(values.get(f"{prefix}_min"))
+                    values.get(f"{prefix}_min")
                     if is_temporal
                     else _normalise_value(values.get(f"{prefix}_min"))
                 ),
                 max_value=(
-                    _normalise_temporal_string(values.get(f"{prefix}_max"))
+                    values.get(f"{prefix}_max")
                     if is_temporal
                     else _normalise_value(values.get(f"{prefix}_max"))
                 ),
@@ -466,7 +440,7 @@ class AnalysisBuilder:
                 median=None
                 if not (is_numeric or is_temporal)
                 else (
-                    _normalise_temporal_string(values.get(f"{prefix}_median"))
+                    values.get(f"{prefix}_median")
                     if is_temporal
                     else _normalise_value(values.get(f"{prefix}_median"))
                 ),
@@ -518,9 +492,12 @@ class AnalysisBuilder:
                 continue
             string_batch = batch.select(string_expressions)
             for name, digest in hash_digests.items():
-                for value in string_batch.get_column(name).to_list():
-                    digest.update(str(value).encode("utf-8"))
-                    digest.update(b"\0")
+                # Batch all row updates into a single digest.update() call per column
+                # per batch; b"\0".join(...) + b"\0" produces the same byte sequence
+                # as updating each value followed by a null separator individually.
+                col_values: list[str] = string_batch.get_column(name).to_list()
+                digest.update(b"\0".join(v.encode() for v in col_values))
+                digest.update(b"\0")
             for name, counts in histogram_counts.items():
                 series = batch.get_column(name).drop_nulls()
                 if series.len() == 0:

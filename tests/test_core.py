@@ -75,15 +75,15 @@ def test_cache_manager_round_trip(tmp_path: Path) -> None:
     _write_csv(data / "a.csv", [{"id": 1, "value": 10.0}])
 
     source = resolve_source(data)
-    analysis = AnalysisBuilder().build(source, ProfileMode.STANDARD).analysis
+    result = AnalysisBuilder().build(source, ProfileMode.STANDARD)
     cache = CacheManager(tmp_path / ".tabcaddy" / "cache")
 
-    cache.set(source, ProfileMode.STANDARD, analysis)
+    cache.set(source, ProfileMode.STANDARD, result)
     cached = cache.get(source, ProfileMode.STANDARD)
 
     assert cached is not None
-    assert cached.metadata.row_count == 1
-    assert cached.schemas[0].hash == analysis.schemas[0].hash
+    assert cached.analysis.metadata.row_count == 1
+    assert cached.analysis.schemas[0].hash == result.analysis.schemas[0].hash
 
 
 def test_diff_logic_reports_changes(tmp_path: Path) -> None:
@@ -95,8 +95,8 @@ def test_diff_logic_reports_changes(tmp_path: Path) -> None:
     _write_csv(right / "a.csv", [{"id": 1, "value": 10.0}, {"id": 2, "value": 20.0}])
 
     generator = GenerateAnalysis()
-    left_analysis = generator.run(resolve_source(left), ProfileMode.DEEP)
-    right_analysis = generator.run(resolve_source(right), ProfileMode.DEEP)
+    left_analysis = generator.run(resolve_source(left), ProfileMode.DEEP).analysis
+    right_analysis = generator.run(resolve_source(right), ProfileMode.DEEP).analysis
     report = compare_analyses(left_analysis, right_analysis, DiffLevel.FULL)
 
     assert any(

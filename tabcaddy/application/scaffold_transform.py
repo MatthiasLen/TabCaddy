@@ -16,7 +16,7 @@ class ScaffoldTransform:
                 f"Output file '{output_path}' already exists. Please provide another filename."
             )
 
-        analysis = self._generate_analysis.run(source, ProfileMode.STANDARD)
+        analysis = self._generate_analysis.run(source, ProfileMode.STANDARD).analysis
         lines = [
             '"""TabCaddy transform scaffold."""',
             "",
