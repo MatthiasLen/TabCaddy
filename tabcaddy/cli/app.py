@@ -7,6 +7,7 @@ import typer
 from tabcaddy.application.compile_dataset import CompileDataset
 from tabcaddy.application.diff_datasets import DiffDatasets
 from tabcaddy.application.generate_analysis import GenerateAnalysis
+from tabcaddy.application.head_dataset import HeadDataset
 from tabcaddy.application.scaffold_transform import ScaffoldTransform
 from tabcaddy.application.transform_dataset import TransformDataset
 from tabcaddy.domain.models import DiffLevel
@@ -16,6 +17,7 @@ from tabcaddy.infrastructure.source_resolver import resolve_source
 from tabcaddy.rendering.console import create_console
 from tabcaddy.rendering.console import resolve_render_profile
 from tabcaddy.rendering.views.diff import build_diff_view
+from tabcaddy.rendering.views.head import build_file_head_view, build_folder_head_view
 from tabcaddy.rendering.views.schema import build_schema_view
 from tabcaddy.rendering.views.summary import build_summary_view
 
@@ -144,6 +146,35 @@ def diff(
         resolve_source(left), resolve_source(right), level
     )
     console.print(build_diff_view(report, render=render))
+
+
+@app.command(help="Preview the first rows of a file or folder")
+def head(
+    source: Path,
+    n: int = typer.Option(
+        10, "--n", "-n", help="Number of rows (file) or files (folder) to show"
+    ),
+    show_meta: bool = typer.Option(False, "--showmeta", help="Show metadata columns"),
+) -> None:
+    source = Path(source).expanduser().resolve()
+    console = create_console()
+    render = resolve_render_profile(console)
+    result = HeadDataset().run(resolve_source(source), n)
+    if result.is_folder:
+        console.print(
+            build_folder_head_view(
+                [(r.path, r.df) for r in result.frames],
+                render=render,
+                show_meta=show_meta,
+            )
+        )
+    else:
+        frame = result.frames[0]
+        console.print(
+            build_file_head_view(
+                frame.df, frame.path, render=render, show_meta=show_meta
+            )
+        )
 
 
 def main() -> None:

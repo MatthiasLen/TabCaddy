@@ -7,6 +7,8 @@ from pathlib import Path
 from tabcaddy.domain.models import DatasetSource, ProfileMode, SourceType
 from tabcaddy.domain.serialization import analysis_to_dict
 from tabcaddy.infrastructure.analysis_builder import AnalysisBuilder
+import polars as pl
+
 from tabcaddy.infrastructure.csv_reader import read_csv
 from tabcaddy.infrastructure.feather_reader import read_feather
 from tabcaddy.infrastructure.parquet_dataset_writer import write_parquet_dataset
@@ -58,9 +60,14 @@ class CompileDataset:
 
         output_path.mkdir(parents=True, exist_ok=False)
 
+        def _read_with_source(path: Path):
+            df = _read_dataframe(path)
+            rel = path.relative_to(source.path).as_posix()
+            return df.with_columns(pl.lit(rel).alias("_source_file"))
+
         # Read selected files and write to Parquet dataset
         written = write_parquet_dataset(
-            (_read_dataframe(path) for path in selected_files),
+            (_read_with_source(path) for path in selected_files),
             output_path,
             total=len(selected_files),
         )
