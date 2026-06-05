@@ -264,19 +264,16 @@ class MergeDatasets:
         if not payload_columns:
             return
 
-        # Check if any key has multiple distinct payloads (indicating a conflict)
+        # Create a single horizontal hash expression representing the entire row's payload
+        payload_hash_expr = pl.struct(payload_columns).hash()
+
+        # A key is conflicting if the payload hash column has more than one unique value
         conflict = (
-            frame.select(
-                [
-                    *(pl.col(col) for col in key_columns),
-                    pl.struct(payload_columns).alias("_payload"),
-                ]
-            )
-            .group_by(key_columns)
-            .agg(pl.col("_payload").n_unique().alias("_variants"))
-            .filter(pl.col("_variants") > 1)
+            frame.group_by(key_columns)
+            .agg(payload_hash_expr.n_unique().alias("_payload_variants"))
+            .filter(pl.col("_payload_variants") > 1)
             .limit(1)
-            .collect()
+            .collect(engine="streaming")
         )
 
         if conflict.is_empty():
