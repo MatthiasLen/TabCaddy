@@ -121,7 +121,9 @@ def test_compile_transform_scaffold_and_diff_commands(tmp_path: Path) -> None:
     assert "Statistics Changes" in diff_result.stdout
 
 
-def test_diff_metadata_level_hides_schema_and_statistics_sections(tmp_path: Path) -> None:
+def test_diff_metadata_level_hides_schema_and_statistics_sections(
+    tmp_path: Path,
+) -> None:
     left = tmp_path / "left"
     right = tmp_path / "right"
     left.mkdir()

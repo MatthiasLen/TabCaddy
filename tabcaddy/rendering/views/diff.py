@@ -23,7 +23,9 @@ def build_diff_view(
     )
     if level == DiffLevel.FULL:
         blocks.append(
-            _build_section("Schema Changes", report.schema_changes, "blue", render=render)
+            _build_section(
+                "Schema Changes", report.schema_changes, "blue", render=render
+            )
         )
     if level in {DiffLevel.STATISTICS, DiffLevel.FULL}:
         blocks.append(
