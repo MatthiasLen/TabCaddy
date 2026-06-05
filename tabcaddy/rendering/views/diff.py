@@ -2,12 +2,18 @@ from __future__ import annotations
 
 from rich.console import Group
 
+from tabcaddy.domain.models import DiffLevel
 from tabcaddy.domain.models import DiffReport
 from tabcaddy.rendering.console import RenderProfile
 from tabcaddy.rendering.console import resolve_render_profile
 
 
-def build_diff_view(report: DiffReport, *, render: RenderProfile | None = None):
+def build_diff_view(
+    report: DiffReport,
+    *,
+    level: DiffLevel = DiffLevel.FULL,
+    render: RenderProfile | None = None,
+):
     render = resolve_render_profile() if render is None else render
     blocks: list[object] = []
     blocks.append(
@@ -15,17 +21,19 @@ def build_diff_view(report: DiffReport, *, render: RenderProfile | None = None):
             "Metadata Changes", report.metadata_changes, "cyan", render=render
         )
     )
-    blocks.append(
-        _build_section("Schema Changes", report.schema_changes, "blue", render=render)
-    )
-    blocks.append(
-        _build_section(
-            "Statistics Changes",
-            report.statistics_changes,
-            "green",
-            render=render,
+    if level == DiffLevel.FULL:
+        blocks.append(
+            _build_section("Schema Changes", report.schema_changes, "blue", render=render)
         )
-    )
+    if level in {DiffLevel.STATISTICS, DiffLevel.FULL}:
+        blocks.append(
+            _build_section(
+                "Statistics Changes",
+                report.statistics_changes,
+                "green",
+                render=render,
+            )
+        )
     blocks.append(_build_section("Warnings", report.warnings, "yellow", render=render))
     return Group(*blocks)
 

@@ -119,3 +119,21 @@ def test_compile_transform_scaffold_and_diff_commands(tmp_path: Path) -> None:
     diff_result = runner.invoke(app, ["diff", str(left), str(right), "--level", "full"])
     assert diff_result.exit_code == 0
     assert "Statistics Changes" in diff_result.stdout
+
+
+def test_diff_metadata_level_hides_schema_and_statistics_sections(tmp_path: Path) -> None:
+    left = tmp_path / "left"
+    right = tmp_path / "right"
+    left.mkdir()
+    right.mkdir()
+    _write_csv(left / "a.csv", [{"id": 1, "value": 10.0}])
+    _write_csv(right / "a.csv", [{"id": 1, "value": 11.0}])
+
+    diff_result = runner.invoke(
+        app, ["diff", str(left), str(right), "--level", "metadata"]
+    )
+
+    assert diff_result.exit_code == 0
+    assert "Metadata Changes" in diff_result.stdout
+    assert "Schema Changes" not in diff_result.stdout
+    assert "Statistics Changes" not in diff_result.stdout

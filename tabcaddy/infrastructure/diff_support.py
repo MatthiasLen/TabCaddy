@@ -9,6 +9,21 @@ from tabcaddy.domain.models import DatasetAnalysis, DiffLevel, DiffReport
 def compare_analyses(
     left: DatasetAnalysis, right: DatasetAnalysis, level: DiffLevel
 ) -> DiffReport:
+    """Compare two dataset analyses and return a report of differences.
+    
+    The level parameter controls which categories of differences are included:
+    - METADATA: Always includes row count, column count, file count, schema hashes.
+    - STATISTICS: Includes metadata + column-level statistics (null rates, min/max, etc).
+    - FULL: Includes metadata + statistics + schema details (added/removed schemas, column type changes).
+    
+    Args:
+        left: The left dataset analysis for comparison.
+        right: The right dataset analysis for comparison.
+        level: DiffLevel controlling the depth of comparison (METADATA, STATISTICS, or FULL).
+        
+    Returns:
+        DiffReport containing metadata_changes, schema_changes, statistics_changes, and warnings.
+    """
     metadata_changes = _diff_metadata(left, right)
     schema_changes = _diff_schema(left, right) if level == DiffLevel.FULL else []
     statistics_changes = (
@@ -26,6 +41,11 @@ def compare_analyses(
 
 
 def _diff_metadata(left: DatasetAnalysis, right: DatasetAnalysis) -> list[str]:
+    """Compare dataset metadata (counts, hashes).
+    
+    Always called regardless of DiffLevel. Reports changes in row count, column count,
+    source file count, schema hash, and column hashes.
+    """
     changes: list[str] = []
     for field in ("row_count", "column_count", "source_file_count", "schema_hash"):
         left_value = getattr(left.metadata, field)
@@ -40,6 +60,11 @@ def _diff_metadata(left: DatasetAnalysis, right: DatasetAnalysis) -> list[str]:
 
 
 def _diff_schema(left: DatasetAnalysis, right: DatasetAnalysis) -> list[str]:
+    """Compare dataset schemas (added/removed schemas and column type changes).
+    
+    Only called when level == DiffLevel.FULL. Reports schema additions, removals,
+    and column data type changes across all schemas.
+    """
     changes: list[str] = []
     left_schemas = {schema.hash: schema for schema in left.schemas}
     right_schemas = {schema.hash: schema for schema in right.schemas}
@@ -64,6 +89,10 @@ def _diff_schema(left: DatasetAnalysis, right: DatasetAnalysis) -> list[str]:
 
 
 def _column_type_map(schemas: Iterable) -> dict[str, set[str]]:
+    """Build a map of column names to their observed data types across schemas.
+    
+    Helper used by _diff_schema to detect when column types change between datasets.
+    """
     mapping: dict[str, set[str]] = {}
     for schema in schemas:
         for column in schema.columns:
@@ -72,6 +101,11 @@ def _column_type_map(schemas: Iterable) -> dict[str, set[str]]:
 
 
 def _diff_statistics(left: DatasetAnalysis, right: DatasetAnalysis) -> list[str]:
+    """Compare column-level statistics (null rates, min/max, mean, median, stddev).
+    
+    Only called when level in {DiffLevel.STATISTICS, DiffLevel.FULL}. Reports changes
+    in column statistics, including missing columns and differing statistical values.
+    """
     if left.statistics is None or right.statistics is None:
         return ["Statistics unavailable for one or both datasets"]
     changes: list[str] = []

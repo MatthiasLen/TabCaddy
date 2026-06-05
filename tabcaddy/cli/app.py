@@ -129,11 +129,15 @@ def scaffold_transform(
     console.print(f"Transform scaffold written to [green]{destination}[/green]")
 
 
-@app.command()
+@app.command(help="Compare two datasets and report differences")
 def diff(
     left: Path,
     right: Path,
-    level: DiffLevel = typer.Option(DiffLevel.FULL, "--level"),
+    level: DiffLevel = typer.Option(
+        DiffLevel.FULL,
+        "--level",
+        help="Comparison depth: metadata (file changes only), statistics (+ column stats), full (+ schema details)",
+    ),
 ) -> None:
     console = create_console()
     render = resolve_render_profile(console)
@@ -145,7 +149,7 @@ def diff(
     report = DiffDatasets(generator).run(
         resolve_source(left), resolve_source(right), level
     )
-    console.print(build_diff_view(report, render=render))
+    console.print(build_diff_view(report, level=level, render=render))
 
 
 @app.command(help="Preview the first rows of a file or folder")
