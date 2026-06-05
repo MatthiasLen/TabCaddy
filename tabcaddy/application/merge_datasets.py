@@ -270,10 +270,16 @@ class MergeDatasets:
         # A key is conflicting if the payload hash column has more than one unique value
         conflict = (
             frame.group_by(key_columns)
-            .agg(payload_hash_expr.n_unique().alias("_payload_variants"))
-            .filter(pl.col("_payload_variants") > 1)
+            .agg(
+                payload_hash_expr.n_unique().alias("_payload_variants")
+            )  # store the count of unique payload hashes for each key group
+            .filter(
+                pl.col("_payload_variants") > 1
+            )  # if more than 1 unique payload hash exists for a key, it's a conflict
             .limit(1)
-            .collect(engine="streaming")
+            .collect(
+                engine="streaming"
+            )  # only need to find one conflict to raise an error
         )
 
         if conflict.is_empty():
