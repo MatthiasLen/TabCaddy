@@ -22,6 +22,28 @@ class _PlannedOperation:
     destination: Path
 
 
+@dataclass(frozen=True)
+class _MatchKey:
+    relative_parent: str | None
+    stem: str
+    suffix: str | None
+
+
+@dataclass(frozen=True)
+class _PreparedOperation:
+    source: Path
+    target: Path | None
+    destination: Path
+    validation: _ValidationResult | None = None
+
+
+@dataclass(frozen=True)
+class _ValidationResult:
+    target_schema: pl.Schema
+    cast_source_to_target_schema: bool
+    conflicting_columns: list[str]
+
+
 class MergeDatasets:
     def run(
         self,
@@ -47,7 +69,7 @@ class MergeDatasets:
             inplace=inplace,
             ignore_filetype=ignore_filetype,
         )
-        self._validate_operations(
+        prepared_operations = self._prepare_operations(
             operations=operations,
             out=output_path,
             inplace=inplace,
@@ -56,15 +78,13 @@ class MergeDatasets:
         )
 
         written: list[Path] = []
-        for operation in operations:
+        for operation in prepared_operations:
             if operation.target is None:
                 self._execute_copy(operation, inplace=inplace)
             else:
                 self._execute_merge(
                     operation=operation,
-                    inplace=inplace,
                     on_columns=on_columns,
-                    ignore_filetype=ignore_filetype,
                 )
             written.append(operation.destination)
         return written
@@ -77,7 +97,6 @@ class MergeDatasets:
         inplace: bool,
         ignore_filetype: bool,
     ) -> list[_PlannedOperation]:
-        # File-to-file merge
         if source.is_file() and target.is_file():
             if not self._supports_merge_pair(source, target, ignore_filetype):
                 raise ValueError(
@@ -89,76 +108,129 @@ class MergeDatasets:
                 )
             return [_PlannedOperation(source=source, target=target, destination=out)]
 
-        # Mixed file-to-folder scenarios
         if source.is_dir() and target.is_file():
             raise ValueError("Folder-to-file merge is not supported.")
 
         if source.is_file() and target.is_dir():
-            destination = self._single_file_destination(
+            target_index = self._build_directory_index(target, ignore_filetype)
+            matched = self._match_indexed_file(
                 source=source,
-                target_folder=target,
-                out=out,
-                inplace=inplace,
+                target_index=target_index,
+                ignore_filetype=ignore_filetype,
             )
-            matched = self._find_directory_match(source, target, ignore_filetype)
             return [
                 _PlannedOperation(
                     source=source,
                     target=matched,
-                    destination=matched
-                    if inplace and matched is not None
-                    else destination,
+                    destination=self._resolve_destination(
+                        source=source,
+                        source_root=source.parent,
+                        target_root=target,
+                        matched_target=matched,
+                        out=out,
+                        inplace=inplace,
+                    ),
                 )
             ]
 
-        # Folder-to-folder merge
+        if out is not None and out.suffix:
+            raise ValueError(
+                "Folder-to-folder merge requires --out to point to a directory."
+            )
+
         if out is not None and out.exists() and not out.is_dir():
             raise ValueError(
                 "Folder-to-folder merge requires --out to point to a directory."
             )
 
         source_files = self._iter_supported_files(source)
-        target_index = self._build_directory_index(target, ignore_filetype)
+        target_index = self._build_directory_index(
+            target,
+            ignore_filetype,
+            relative_to=target,
+        )
         operations: list[_PlannedOperation] = []
-
+        matched_targets: set[Path] = set()
         for file_path in source_files:
             matched = self._match_indexed_file(
                 source=file_path,
                 target_index=target_index,
                 ignore_filetype=ignore_filetype,
+                relative_to=source,
             )
-
-            if inplace:
-                destination = (
-                    matched
-                    if matched is not None
-                    else target / file_path.relative_to(source)
-                )
-            else:
-                assert out is not None
-                destination = (
-                    out / matched.relative_to(target)
-                    if matched is not None
-                    else out / file_path.relative_to(source)
-                )
+            if matched is not None:
+                matched_targets.add(matched)
 
             operations.append(
                 _PlannedOperation(
                     source=file_path,
                     target=matched,
-                    destination=destination,
+                    destination=self._resolve_destination(
+                        source=file_path,
+                        source_root=source,
+                        target_root=target,
+                        matched_target=matched,
+                        out=out,
+                        inplace=inplace,
+                    ),
                 )
             )
+
+        if not inplace:
+            assert out is not None
+            for target_file in sorted(set(target_index.values()) - matched_targets):
+                operations.append(
+                    _PlannedOperation(
+                        source=target_file,
+                        target=None,
+                        destination=out / target_file.relative_to(target),
+                    )
+                )
         return operations
 
-    def _validate_operations(
+    def _resolve_destination(
+        self,
+        source: Path,
+        source_root: Path,
+        target_root: Path,
+        matched_target: Path | None,
+        out: Path | None,
+        inplace: bool,
+    ) -> Path:
+        if matched_target is not None:
+            if inplace:
+                return matched_target
+            if out is None:
+                raise ValueError("Provide --out unless --inplace is selected.")
+            if source_root == source.parent and out.suffix:
+                return out
+            return out / matched_target.relative_to(target_root)
+
+        relative_path = source.relative_to(source_root)
+        if inplace:
+            return target_root / relative_path
+
+        if out is None:
+            raise ValueError("Provide --out unless --inplace is selected.")
+
+        if out.exists() and out.is_dir():
+            return out / relative_path
+        if not out.exists() and not out.suffix:
+            return out / relative_path
+        if relative_path.parent == Path("."):
+            return out
+        raise ValueError(
+            "Folder-to-folder merge requires --out to point to a directory."
+        )
+
+    def _prepare_operations(
         self,
         operations: list[_PlannedOperation],
         out: Path | None,
         inplace: bool,
         on_columns: tuple[str, ...],
         ignore_filetype: bool,
-    ) -> None:
+    ) -> list[_PreparedOperation]:
         if not operations:
             raise ValueError("No supported source files found to merge.")
 
@@ -168,40 +240,71 @@ class MergeDatasets:
             )
 
         destinations: set[Path] = set()
+        prepared_operations: list[_PreparedOperation] = []
         for operation in operations:
-            if operation.destination in destinations:
-                raise ValueError(
-                    f"Multiple source files resolve to the same destination: {operation.destination}"
+            self._validate_destination(operation.destination, destinations, inplace)
+            prepared_operations.append(
+                self._prepare_operation(
+                    operation=operation,
+                    on_columns=on_columns,
+                    ignore_filetype=ignore_filetype,
                 )
-            destinations.add(operation.destination)
-
-            if operation.destination.suffix.lower() not in SUPPORTED_FILE_SUFFIXES:
-                raise ValueError(
-                    f"Unsupported output file type: {operation.destination.suffix}"
-                )
-
-            if not inplace and operation.destination.exists():
-                raise FileExistsError(
-                    f"Output path already exists: {operation.destination}"
-                )
-
-            if operation.target is None:
-                continue
-
-            validation = self._validate_merge_pair(
-                source=operation.source,
-                target=operation.target,
-                on_columns=on_columns,
-                ignore_filetype=ignore_filetype,
             )
-            if validation.conflicting_columns:
-                conflict_list = ", ".join(validation.conflicting_columns)
-                raise ValueError(
-                    f"Schema mismatch between {operation.source} and {operation.target}: "
-                    f"incompatible types for {conflict_list}"
-                )
 
-    def _execute_copy(self, operation: _PlannedOperation, inplace: bool) -> None:
+        return prepared_operations
+
+    def _validate_destination(
+        self,
+        destination: Path,
+        destinations: set[Path],
+        inplace: bool,
+    ) -> None:
+        if destination in destinations:
+            raise ValueError(
+                f"Multiple source files resolve to the same destination: {destination}"
+            )
+        destinations.add(destination)
+
+        if destination.suffix.lower() not in SUPPORTED_FILE_SUFFIXES:
+            raise ValueError(f"Unsupported output file type: {destination.suffix}")
+
+        if not inplace and destination.exists():
+            raise FileExistsError(f"Output path already exists: {destination}")
+
+    def _prepare_operation(
+        self,
+        operation: _PlannedOperation,
+        on_columns: tuple[str, ...],
+        ignore_filetype: bool,
+    ) -> _PreparedOperation:
+        if operation.target is None:
+            return _PreparedOperation(
+                source=operation.source,
+                target=None,
+                destination=operation.destination,
+            )
+
+        validation = self._validate_merge_pair(
+            source=operation.source,
+            target=operation.target,
+            on_columns=on_columns,
+            ignore_filetype=ignore_filetype,
+        )
+        if validation.conflicting_columns:
+            conflict_list = ", ".join(validation.conflicting_columns)
+            raise ValueError(
+                f"Schema mismatch between {operation.source} and {operation.target}: "
+                f"incompatible types for {conflict_list}"
+            )
+
+        return _PreparedOperation(
+            source=operation.source,
+            target=operation.target,
+            destination=operation.destination,
+            validation=validation,
+        )
+
+    def _execute_copy(self, operation: _PreparedOperation, inplace: bool) -> None:
         lazy_frame = self._scan_dataframe(operation.source)
         self._write_lazyframe(
             lazy_frame=lazy_frame,
@@ -212,27 +315,21 @@ class MergeDatasets:
 
     def _execute_merge(
         self,
-        operation: _PlannedOperation,
-        inplace: bool,
+        operation: _PreparedOperation,
         on_columns: tuple[str, ...],
-        ignore_filetype: bool,
     ) -> None:
         assert operation.target is not None, "_execute_merge requires target to be set"
-
-        validation = self._validate_merge_pair(
-            source=operation.source,
-            target=operation.target,
-            on_columns=on_columns,
-            ignore_filetype=ignore_filetype,
-        )
+        assert operation.validation is not None, "_execute_merge requires validation"
 
         source_frame = self._scan_dataframe(operation.source)
-        if validation.cast_source_to_target_schema:
-            source_frame = self._cast_lazyframe(source_frame, validation.target_schema)
+        if operation.validation.cast_source_to_target_schema:
+            source_frame = self._cast_lazyframe(
+                source_frame,
+                operation.validation.target_schema,
+            )
 
         target_frame = self._scan_dataframe(operation.target)
 
-        # Concatenate frames and remove exact duplicates while preserving order
         merged = pl.concat([target_frame, source_frame], how="vertical")
         deduplicated = merged.unique(maintain_order=True)
 
@@ -247,7 +344,7 @@ class MergeDatasets:
         self._write_lazyframe(
             lazy_frame=deduplicated,
             destination=operation.destination,
-            inplace=inplace,
+            inplace=operation.destination == operation.target,
             format_hint=operation.destination,
         )
 
@@ -264,22 +361,13 @@ class MergeDatasets:
         if not payload_columns:
             return
 
-        # Create a single horizontal hash expression representing the entire row's payload
-        payload_hash_expr = pl.struct(payload_columns).hash()
-
-        # A key is conflicting if the payload hash column has more than one unique value
+        payload_struct_expr = pl.struct(payload_columns)
         conflict = (
             frame.group_by(key_columns)
-            .agg(
-                payload_hash_expr.n_unique().alias("_payload_variants")
-            )  # store the count of unique payload hashes for each key group
-            .filter(
-                pl.col("_payload_variants") > 1
-            )  # if more than 1 unique payload hash exists for a key, it's a conflict
+            .agg(payload_struct_expr.n_unique().alias("_payload_variants"))
+            .filter(pl.col("_payload_variants") > 1)
             .limit(1)
-            .collect(
-                engine="streaming"
-            )  # only need to find one conflict to raise an error
+            .collect(engine="streaming")
         )
 
         if conflict.is_empty():
@@ -334,29 +422,15 @@ class MergeDatasets:
             conflicting_columns=conflicting_columns,
         )
 
-    def _single_file_destination(
-        self,
-        source: Path,
-        target_folder: Path,
-        out: Path | None,
-        inplace: bool,
-    ) -> Path:
-        if inplace:
-            return target_folder / source.name
-        if out is None:
-            raise ValueError("Provide --out unless --inplace is selected.")
-        if out.exists() and out.is_dir():
-            return out / source.name
-        if not out.exists() and not out.suffix:
-            return out / source.name
-        return out
-
     def _build_directory_index(
-        self, target_folder: Path, ignore_filetype: bool
-    ) -> dict[tuple[str, str | None], Path]:
-        duplicates: defaultdict[tuple[str, str | None], list[Path]] = defaultdict(list)
+        self,
+        target_folder: Path,
+        ignore_filetype: bool,
+        relative_to: Path | None = None,
+    ) -> dict[_MatchKey, Path]:
+        duplicates: defaultdict[_MatchKey, list[Path]] = defaultdict(list)
         for path in self._iter_supported_files(target_folder, allow_empty=True):
-            key = self._match_key(path, ignore_filetype)
+            key = self._match_key(path, ignore_filetype, relative_to=relative_to)
             duplicates[key].append(path)
 
         # Check for ambiguous matches (multiple files with same key)
@@ -367,27 +441,35 @@ class MergeDatasets:
 
         return {key: paths[0] for key, paths in duplicates.items()}
 
-    def _find_directory_match(
-        self, source: Path, target_folder: Path, ignore_filetype: bool
-    ) -> Path | None:
-        return self._match_indexed_file(
-            source=source,
-            target_index=self._build_directory_index(target_folder, ignore_filetype),
-            ignore_filetype=ignore_filetype,
-        )
-
     def _match_indexed_file(
         self,
         source: Path,
-        target_index: dict[tuple[str, str | None], Path],
+        target_index: dict[_MatchKey, Path],
         ignore_filetype: bool,
+        relative_to: Path | None = None,
     ) -> Path | None:
-        return target_index.get(self._match_key(source, ignore_filetype))
+        return target_index.get(
+            self._match_key(source, ignore_filetype, relative_to=relative_to)
+        )
 
-    def _match_key(self, path: Path, ignore_filetype: bool) -> tuple[str, str | None]:
+    def _match_key(
+        self,
+        path: Path,
+        ignore_filetype: bool,
+        relative_to: Path | None = None,
+    ) -> _MatchKey:
+        relative_parent: str | None = None
+        if relative_to is not None:
+            relative_parent = path.relative_to(relative_to).parent.as_posix()
         if ignore_filetype:
-            return (path.stem, None)
-        return (path.stem, path.suffix.lower())
+            return _MatchKey(
+                relative_parent=relative_parent, stem=path.stem, suffix=None
+            )
+        return _MatchKey(
+            relative_parent=relative_parent,
+            stem=path.stem,
+            suffix=path.suffix.lower(),
+        )
 
     def _supports_merge_pair(
         self, source: Path, target: Path, ignore_filetype: bool
@@ -486,10 +568,3 @@ class MergeDatasets:
 
     def _temp_path(self, destination: Path) -> Path:
         return destination.with_name(f".{destination.name}.tmp")
-
-
-@dataclass(frozen=True)
-class _ValidationResult:
-    target_schema: pl.Schema
-    cast_source_to_target_schema: bool
-    conflicting_columns: list[str]

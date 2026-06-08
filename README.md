@@ -169,6 +169,20 @@ Compare two files, two folders, or two compiled datasets.
 - `statistics`: metadata plus statistics changes
 - `full`: metadata, schema, and statistics changes
 
+`merge`
+
+```bash
+tabcaddy merge <source> <target> (--out <path> | --inplace) [--on COLUMN ...] [--ignore-filetype]
+```
+
+Merge appends source rows onto the matching target file and writes the result using the target file layout. Matching is by relative path inside folders; with `--ignore-filetype`, matching ignores the extension and uses relative path plus file stem instead.
+
+Rows are merged vertically, not column-by-column: both files must have the same columns in the same order, and the merged output keeps that schema. Exact duplicate rows are removed. Rows with the same key are not updated or combined.
+
+`--on` can be repeated to define a composite key such as `--on customer_id --on order_id`. Those columns are only used to detect conflicts after the row merge: if two rows share the same key but differ in any other column, the merge fails. If the non-key values are identical, the duplicate collapses to one row through normal exact-row deduplication.
+
+Use `--ignore-filetype` to merge matching CSV and binary files by path when their column layout is compatible; when merging CSV into a binary target, TabCaddy casts the CSV columns to the target types and fails if that cast is not possible.
+
 ### Typical Workflows
 
 Inspect a folder before deciding whether to compile it:
@@ -195,6 +209,18 @@ Compare two compiled snapshots:
 
 ```bash
 tabcaddy diff compiled_dataset_2025_12 compiled_dataset_2026_01 --level full
+```
+
+Merge an incoming folder into an archive without modifying the original target:
+
+```bash
+tabcaddy merge incoming/ archive/ --out merged_archive --on id
+```
+
+Use a composite key by repeating `--on`:
+
+```bash
+tabcaddy merge incoming/ archive/ --out merged_archive --on customer_id --on order_id
 ```
 
 ### Help
