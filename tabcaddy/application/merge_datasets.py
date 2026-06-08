@@ -97,6 +97,7 @@ class MergeDatasets:
         inplace: bool,
         ignore_filetype: bool,
     ) -> list[_PlannedOperation]:
+        """Determine which source files should be merged with which target files, and where the results should be written."""
         if source.is_file() and target.is_file():
             if not self._supports_merge_pair(source, target, ignore_filetype):
                 raise ValueError(
