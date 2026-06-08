@@ -8,7 +8,7 @@ from tabcaddy.application.compile_dataset import CompileDataset
 from tabcaddy.application.diff_datasets import DiffDatasets
 from tabcaddy.application.generate_analysis import GenerateAnalysis
 from tabcaddy.application.head_dataset import HeadDataset
-from tabcaddy.application.merge_datasets import MergeDatasets
+from tabcaddy.application.merge import MergeDatasets
 from tabcaddy.application.scaffold_transform import ScaffoldTransform
 from tabcaddy.application.transform_dataset import TransformDataset
 from tabcaddy.domain.models import DiffLevel
