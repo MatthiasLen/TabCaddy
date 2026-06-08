@@ -20,6 +20,7 @@ class _PlannedOperation:
     source: Path
     target: Path | None
     destination: Path
+    output_directory: bool
 
 
 @dataclass(frozen=True)
@@ -107,7 +108,14 @@ class MergeDatasets:
                 raise ValueError(
                     "File-to-file merge requires --out to point to a file."
                 )
-            return [_PlannedOperation(source=source, target=target, destination=out)]
+            return [
+                _PlannedOperation(
+                    source=source,
+                    target=target,
+                    destination=out,
+                    output_directory=False,
+                )
+            ]
 
         if source.is_dir() and target.is_file():
             raise ValueError("Folder-to-file merge is not supported.")
@@ -130,16 +138,25 @@ class MergeDatasets:
                         matched_target=matched,
                         out=out,
                         inplace=inplace,
+                        output_directory=(
+                            out is not None and out.exists() and out.is_dir()
+                        ),
+                    ),
+                    output_directory=(
+                        out is not None and out.exists() and out.is_dir()
                     ),
                 )
             ]
 
-        if out is not None and out.suffix:
+        if out is not None and out.exists() and not out.is_dir():
             raise ValueError(
                 "Folder-to-folder merge requires --out to point to a directory."
             )
-
-        if out is not None and out.exists() and not out.is_dir():
+        if (
+            out is not None
+            and not out.exists()
+            and out.suffix.lower() in SUPPORTED_FILE_SUFFIXES
+        ):
             raise ValueError(
                 "Folder-to-folder merge requires --out to point to a directory."
             )
@@ -173,18 +190,22 @@ class MergeDatasets:
                         matched_target=matched,
                         out=out,
                         inplace=inplace,
+                        output_directory=True,
                     ),
+                    output_directory=True,
                 )
             )
 
         if not inplace:
-            assert out is not None
+            if out is None:
+                raise ValueError("Provide --out unless --inplace is selected.")
             for target_file in sorted(set(target_index.values()) - matched_targets):
                 operations.append(
                     _PlannedOperation(
                         source=target_file,
                         target=None,
                         destination=out / target_file.relative_to(target),
+                        output_directory=True,
                     )
                 )
         return operations
@@ -197,13 +218,14 @@ class MergeDatasets:
         matched_target: Path | None,
         out: Path | None,
         inplace: bool,
+        output_directory: bool,
     ) -> Path:
         if matched_target is not None:
             if inplace:
                 return matched_target
             if out is None:
                 raise ValueError("Provide --out unless --inplace is selected.")
-            if source_root == source.parent and out.suffix:
+            if not output_directory:
                 return out
             return out / matched_target.relative_to(target_root)
 
@@ -214,9 +236,7 @@ class MergeDatasets:
         if out is None:
             raise ValueError("Provide --out unless --inplace is selected.")
 
-        if out.exists() and out.is_dir():
-            return out / relative_path
-        if not out.exists() and not out.suffix:
+        if output_directory:
             return out / relative_path
         if relative_path.parent == Path("."):
             return out
@@ -235,7 +255,7 @@ class MergeDatasets:
         if not operations:
             raise ValueError("No supported source files found to merge.")
 
-        if out is not None and len(operations) > 1 and out.suffix:
+        if out is not None and len(operations) > 1 and out.exists() and out.is_file():
             raise ValueError(
                 "Folder-to-folder merge requires --out to point to a directory."
             )
@@ -319,8 +339,10 @@ class MergeDatasets:
         operation: _PreparedOperation,
         on_columns: tuple[str, ...],
     ) -> None:
-        assert operation.target is not None, "_execute_merge requires target to be set"
-        assert operation.validation is not None, "_execute_merge requires validation"
+        if operation.target is None:
+            raise ValueError("_execute_merge requires target to be set")
+        if operation.validation is None:
+            raise ValueError("_execute_merge requires validation")
 
         source_frame = self._scan_dataframe(operation.source)
         if operation.validation.cast_source_to_target_schema:

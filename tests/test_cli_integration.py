@@ -63,6 +63,28 @@ def test_compile_transform_scaffold_and_diff_commands(
     assert "No changes." in diff_result.stdout
 
 
+def test_compile_interactive_schema_selection_uses_one_based_index(
+    tmp_path: Path, drift_folder
+) -> None:
+    compiled = tmp_path / "compiled_interactive"
+
+    result = runner.invoke(
+        app,
+        [
+            "compile",
+            str(drift_folder),
+            "--interactive",
+            "--output",
+            str(compiled),
+        ],
+        input="1\n",
+    )
+
+    assert result.exit_code == 0
+    assert (compiled / "metadata.json").exists()
+    assert "Skipped 1 files from non-selected schemas." in result.stdout
+
+
 def test_transform_compiled_dataset_writes_compiled_output(
     tmp_path: Path, homogeneous_folder
 ) -> None:

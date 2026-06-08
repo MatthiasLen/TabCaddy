@@ -204,6 +204,55 @@ def test_merge_folder_to_folder_matches_by_relative_path(tmp_path: Path) -> None
     ]
 
 
+def test_merge_folder_to_folder_accepts_dotted_out_directory_name(
+    tmp_path: Path,
+) -> None:
+    source_dir = tmp_path / "incoming"
+    target_dir = tmp_path / "archive"
+    output_dir = tmp_path / "combined.v2"
+
+    _write_frame(source_dir / "sales.csv", [{"id": 2, "value": 20}])
+    _write_frame(target_dir / "sales.csv", [{"id": 1, "value": 10}])
+
+    result = runner.invoke(
+        app,
+        ["merge", str(source_dir), str(target_dir), "--out", str(output_dir)],
+    )
+
+    assert result.exit_code == 0
+    assert _read_frame(output_dir / "sales.csv").to_dicts() == [
+        {"id": 1, "value": 10},
+        {"id": 2, "value": 20},
+    ]
+
+
+def test_merge_file_into_folder_uses_existing_dotted_output_directory(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "sales.csv"
+    archive = tmp_path / "archive"
+    output_dir = tmp_path / "combined.v2"
+
+    archive.mkdir()
+    output_dir.mkdir()
+    _write_frame(source, [{"id": 2, "value": 20}, {"id": 3, "value": 30}])
+    _write_frame(
+        archive / "sales.csv", [{"id": 1, "value": 10}, {"id": 2, "value": 20}]
+    )
+
+    result = runner.invoke(
+        app,
+        ["merge", str(source), str(archive), "--out", str(output_dir)],
+    )
+
+    assert result.exit_code == 0
+    assert _read_frame(output_dir / "sales.csv").to_dicts() == [
+        {"id": 1, "value": 10},
+        {"id": 2, "value": 20},
+        {"id": 3, "value": 30},
+    ]
+
+
 def test_merge_ignore_filetype_casts_csv_into_binary_target(tmp_path: Path) -> None:
     source = tmp_path / "sales.csv"
     archive = tmp_path / "archive"
