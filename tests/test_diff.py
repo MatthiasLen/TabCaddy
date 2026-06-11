@@ -45,9 +45,7 @@ def _write_compiled_dataset(
     )
     payload = analysis_to_dict(analysis)
     payload["compiled"] = compiled
-    (root / "metadata.json").write_text(
-        json.dumps(payload, indent=2), encoding="utf-8"
-    )
+    (root / "metadata.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
     return DatasetSource(path=root, source_type=SourceType.COMPILED_DATASET)
 
 

@@ -18,7 +18,9 @@ class CompiledDatasetDiffer:
         self._generate_analysis = generate_analysis
 
     def _load_compiled_provenance(self, source: DatasetSource) -> dict | None:
-        payload = json.loads((source.path / "metadata.json").read_text(encoding="utf-8"))
+        payload = json.loads(
+            (source.path / "metadata.json").read_text(encoding="utf-8")
+        )
         compiled = payload.get("compiled")
         return compiled if isinstance(compiled, dict) else None
 
@@ -31,7 +33,9 @@ class CompiledDatasetDiffer:
         left_analysis = self._generate_analysis.run(left, profile_mode).analysis
         right_analysis = self._generate_analysis.run(right, profile_mode).analysis
         report = compare_analyses(left_analysis, right_analysis, level)
-        if self._load_compiled_provenance(left) != self._load_compiled_provenance(right):
+        if self._load_compiled_provenance(left) != self._load_compiled_provenance(
+            right
+        ):
             report.metadata_changes.append("Compiled dataset provenance changed")
         report.summary = DiffSummary(comparison_type=DiffComparisonType.COMPILED)
         return report
