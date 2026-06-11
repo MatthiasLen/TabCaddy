@@ -4,15 +4,20 @@ import os
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 import polars as pl
 
-from tabcaddy.infrastructure.source_resolver import SUPPORTED_FILE_SUFFIXES
+from tabcaddy.infrastructure.source_resolver import (
+    SUPPORTED_FILE_SUFFIXES,
+    is_compiled_dataset,
+)
 
 
 _BINARY_FILE_SUFFIXES = {".parquet", ".feather", ".arrow"}
 _CSV_SUFFIX = ".csv"
 _FEATHER_ARROW_SUFFIXES = {".feather", ".arrow"}
+MergeOperationKind = Literal["merge", "source_only", "target_passthrough"]
 
 
 @dataclass(frozen=True)
@@ -21,6 +26,7 @@ class PlannedOperation:
     target: Path | None
     destination: Path
     output_directory: bool
+    kind: MergeOperationKind = "merge"
 
 
 @dataclass(frozen=True)
@@ -45,12 +51,17 @@ class PreparedOperation:
     validation: ValidationResult | None = None
 
 
-def resolve_existing_path(path: Path, role: str) -> Path:
+def resolve_merge_path(path: Path, role: str) -> Path:
     resolved = path.expanduser().resolve()
     if not resolved.exists():
         raise FileNotFoundError(f"{role.capitalize()} does not exist: {resolved}")
     if resolved.is_file() and resolved.suffix.lower() not in SUPPORTED_FILE_SUFFIXES:
         raise ValueError(f"Unsupported file type: {resolved.suffix}")
+    if is_compiled_dataset(resolved):
+        raise ValueError(
+            f"Merge does not support compiled datasets for {role}: {resolved}. "
+            "Use files or folders, or merge the raw inputs and compile again."
+        )
     return resolved
 
 

@@ -36,6 +36,7 @@ class MergePlanner:
                     target=target,
                     destination=out,
                     output_directory=False,
+                    kind="merge",
                 )
             ]
 
@@ -60,6 +61,7 @@ class MergePlanner:
                         output_directory=output_directory,
                     ),
                     output_directory=output_directory,
+                    kind="merge" if matched is not None else "source_only",
                 )
             ]
 
@@ -95,6 +97,7 @@ class MergePlanner:
                         output_directory=True,
                     ),
                     output_directory=True,
+                    kind="merge" if matched is not None else "source_only",
                 )
             )
 
@@ -108,6 +111,7 @@ class MergePlanner:
                         target=None,
                         destination=out / target_file.relative_to(target),
                         output_directory=True,
+                        kind="target_passthrough",
                     )
                 )
         return operations

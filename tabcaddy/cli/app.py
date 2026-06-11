@@ -182,7 +182,12 @@ def head(
         )
 
 
-@app.command(help="Merge files or folders with schema validation and conflict checks")
+@app.command(
+    help=(
+        "Merge files or folders with schema validation and conflict checks. "
+        "Compiled datasets are not supported."
+    )
+)
 def merge(
     source: Path,
     target: Path,
@@ -206,29 +211,54 @@ def merge(
         "--ignore-filetype",
         help="Allow folder matching across CSV, Parquet, Feather, and Arrow extensions.",
     ),
+    dry: bool = typer.Option(
+        False,
+        "--dry",
+        help="Preview the merge plan without writing any files.",
+    ),
 ) -> None:
     console = create_console()
+    merge_datasets = MergeDatasets()
 
     try:
-        written = MergeDatasets().run(
-            source=source,
-            target=target,
-            out=out,
-            inplace=inplace,
-            on_columns=tuple(on or ()),
-            ignore_filetype=ignore_filetype,
-        )
+        if dry:
+            lines, has_issues = merge_datasets.preview(
+                source=source,
+                target=target,
+                out=out,
+                inplace=inplace,
+                on_columns=tuple(on or ()),
+                ignore_filetype=ignore_filetype,
+            )
+        else:
+            written = merge_datasets.run(
+                source=source,
+                target=target,
+                out=out,
+                inplace=inplace,
+                on_columns=tuple(on or ()),
+                ignore_filetype=ignore_filetype,
+            )
     except (FileExistsError, FileNotFoundError, ValueError) as error:
         console.print(f"[red]{error}[/red]")
         raise typer.Exit(code=1) from error
+
+    if dry:
+        console.print("Dry-run merge plan")
+        for line in lines:
+            console.print(line)
+        if has_issues:
+            raise typer.Exit(code=1)
+        return
 
     if len(written) == 1:
         console.print(f"Merged dataset written to [green]{written[0]}[/green]")
         return
 
-    console.print(
-        f"Merged {len(written)} files into [green]{written[0].parent}[/green]"
+    output_root = (
+        out.expanduser().resolve() if out is not None else target.expanduser().resolve()
     )
+    console.print(f"Merged {len(written)} files into [green]{output_root}[/green]")
 
 
 def main() -> None:
