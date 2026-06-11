@@ -89,9 +89,7 @@ def match_indexed_file(
     ignore_filetype: bool,
     relative_to: Path | None = None,
 ) -> Path | None:
-    return target_index.get(
-        match_key(source, ignore_filetype, relative_to=relative_to)
-    )
+    return target_index.get(match_key(source, ignore_filetype, relative_to=relative_to))
 
 
 def match_key(
@@ -128,8 +126,7 @@ def scan_dataframe(path: Path) -> pl.LazyFrame:
 
 def cast_lazyframe(frame: pl.LazyFrame, schema: pl.Schema) -> pl.LazyFrame:
     return frame.with_columns(
-        pl.col(column).cast(dtype, strict=True)
-        for column, dtype in schema.items()
+        pl.col(column).cast(dtype, strict=True) for column, dtype in schema.items()
     )
 
 

@@ -27,7 +27,9 @@ class MergePlanner:
                     "Source and target file types must match unless --ignore-filetype is provided."
                 )
             if out is None or out.is_dir():
-                raise ValueError("File-to-file merge requires --out to point to a file.")
+                raise ValueError(
+                    "File-to-file merge requires --out to point to a file."
+                )
             return [
                 PlannedOperation(
                     source=source,

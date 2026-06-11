@@ -31,9 +31,7 @@ class MergeConflictDetector:
             return
 
         values = conflict.row(0, named=True)
-        key_values = ", ".join(
-            f"{column}={values[column]!r}" for column in key_columns
-        )
+        key_values = ", ".join(f"{column}={values[column]!r}" for column in key_columns)
         raise ValueError(
             f"Conflicting duplicate key detected while merging {source} into {target}: {key_values}"
         )
