@@ -125,6 +125,7 @@ def analysis_from_dict(payload: dict[str, Any]) -> DatasetAnalysis:
 
 def diff_report_to_dict(report: DiffReport) -> dict[str, Any]:
     return {
+        "file_changes": list(report.file_changes),
         "metadata_changes": list(report.metadata_changes),
         "schema_changes": list(report.schema_changes),
         "statistics_changes": list(report.statistics_changes),

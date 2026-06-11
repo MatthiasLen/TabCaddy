@@ -143,13 +143,16 @@ def diff(
     console = create_console()
     render = resolve_render_profile(console)
     generator = GenerateAnalysis()
+    try:
+        left = Path(left).expanduser().resolve()
+        right = Path(right).expanduser().resolve()
+        report = DiffDatasets(generator).run(
+            resolve_source(left), resolve_source(right), level
+        )
+    except (FileExistsError, FileNotFoundError, ValueError) as error:
+        console.print(f"[red]{error}[/red]")
+        raise typer.Exit(code=1) from error
 
-    left = Path(left).expanduser().resolve()
-    right = Path(right).expanduser().resolve()
-
-    report = DiffDatasets(generator).run(
-        resolve_source(left), resolve_source(right), level
-    )
     console.print(build_diff_view(report, level=level, render=render))
 
 

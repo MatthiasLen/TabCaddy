@@ -60,7 +60,7 @@ def test_compile_transform_scaffold_and_diff_commands(
 
     diff_result = runner.invoke(app, ["diff", str(compiled), str(compiled)])
     assert diff_result.exit_code == 0
-    assert "No changes." in diff_result.stdout
+    assert "No differences detected." in diff_result.stdout
 
 
 def test_compile_interactive_schema_selection_uses_one_based_index(

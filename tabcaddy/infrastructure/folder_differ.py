@@ -3,7 +3,14 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from hashlib import file_digest
 
-from tabcaddy.domain.models import DatasetSource, DiffLevel, DiffReport, ProfileMode
+from tabcaddy.domain.models import (
+    DatasetSource,
+    DiffComparisonType,
+    DiffLevel,
+    DiffReport,
+    DiffSummary,
+    ProfileMode,
+)
 from tabcaddy.infrastructure.diff_support import compare_analyses
 from tabcaddy.infrastructure.source_resolver import iter_dataset_files
 
@@ -29,6 +36,7 @@ class FolderDiffer:
         }
 
         report = DiffReport(
+            file_changes=[],
             metadata_changes=[],
             schema_changes=[],
             statistics_changes=[],
@@ -36,16 +44,25 @@ class FolderDiffer:
 
         # Always report file additions/removals
         for file_name in sorted(right_files.keys() - left_files.keys()):
-            report.metadata_changes.append(f"Added file: {file_name}")
+            report.file_changes.append(f"Added file: {file_name}")
         for file_name in sorted(left_files.keys() - right_files.keys()):
-            report.metadata_changes.append(f"Removed file: {file_name}")
+            report.file_changes.append(f"Removed file: {file_name}")
 
         # For matching files, detect modifications (fast path via file stats + hash)
         modified_files = self._find_modified_files(
             left_files, right_files, sorted(left_files.keys() & right_files.keys())
         )
         for file_name in modified_files:
-            report.metadata_changes.append(f"Modified file: {file_name}")
+            report.file_changes.append(f"Modified file: {file_name}")
+
+        report.summary = DiffSummary(
+            comparison_type=DiffComparisonType.FOLDER,
+            matching_files=len(left_files.keys() & right_files.keys())
+            - len(modified_files),
+            modified_files=len(modified_files),
+            only_in_left=len(left_files.keys() - right_files.keys()),
+            only_in_right=len(right_files.keys() - left_files.keys()),
+        )
 
         # Only generate analysis if needed for content comparison
         if level != DiffLevel.METADATA:
@@ -57,6 +74,7 @@ class FolderDiffer:
             left_analysis = self._generate_analysis.run(left, profile_mode).analysis
             right_analysis = self._generate_analysis.run(right, profile_mode).analysis
             content_report = compare_analyses(left_analysis, right_analysis, level)
+            report.file_changes.extend(content_report.file_changes)
             report.metadata_changes.extend(content_report.metadata_changes)
             report.schema_changes = content_report.schema_changes
             report.statistics_changes = content_report.statistics_changes

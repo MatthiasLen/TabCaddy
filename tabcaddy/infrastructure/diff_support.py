@@ -3,7 +3,13 @@ from __future__ import annotations
 import math
 from typing import Iterable
 
-from tabcaddy.domain.models import DatasetAnalysis, DiffLevel, DiffReport
+from tabcaddy.domain.models import (
+    DatasetAnalysis,
+    DiffComparisonType,
+    DiffLevel,
+    DiffReport,
+    DiffSummary,
+)
 
 
 def compare_analyses(
@@ -33,10 +39,12 @@ def compare_analyses(
     )
     warnings = sorted({*left.warnings, *right.warnings})
     return DiffReport(
+        file_changes=[],
         metadata_changes=metadata_changes,
         schema_changes=schema_changes,
         statistics_changes=statistics_changes,
         warnings=warnings,
+        summary=DiffSummary(comparison_type=DiffComparisonType.FILE),
     )
 
 
