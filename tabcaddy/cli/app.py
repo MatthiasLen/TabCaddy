@@ -204,7 +204,7 @@ def merge(
     ignore_filetype: bool = typer.Option(
         False,
         "--ignore-filetype",
-        help="Allow folder matching across CSV, Parquet, and Feather extensions.",
+        help="Allow folder matching across CSV, Parquet, Feather, and Arrow extensions.",
     ),
 ) -> None:
     console = create_console()

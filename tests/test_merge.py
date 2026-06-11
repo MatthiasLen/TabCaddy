@@ -253,6 +253,32 @@ def test_merge_file_into_folder_uses_existing_dotted_output_directory(
     ]
 
 
+def test_merge_file_into_folder_accepts_nonexistent_dotted_output_directory(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "sales.csv"
+    archive = tmp_path / "archive"
+    output_dir = tmp_path / "combined.v2"
+
+    archive.mkdir()
+    _write_frame(source, [{"id": 2, "value": 20}, {"id": 3, "value": 30}])
+    _write_frame(
+        archive / "sales.csv", [{"id": 1, "value": 10}, {"id": 2, "value": 20}]
+    )
+
+    result = runner.invoke(
+        app,
+        ["merge", str(source), str(archive), "--out", str(output_dir)],
+    )
+
+    assert result.exit_code == 0
+    assert _read_frame(output_dir / "sales.csv").to_dicts() == [
+        {"id": 1, "value": 10},
+        {"id": 2, "value": 20},
+        {"id": 3, "value": 30},
+    ]
+
+
 def test_merge_ignore_filetype_casts_csv_into_binary_target(tmp_path: Path) -> None:
     source = tmp_path / "sales.csv"
     archive = tmp_path / "archive"

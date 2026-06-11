@@ -43,7 +43,7 @@ class MergePlanner:
             raise ValueError("Folder-to-file merge is not supported.")
 
         if source.is_file() and target.is_dir():
-            output_directory = out is not None and out.exists() and out.is_dir()
+            output_directory = self._is_output_directory_path(out)
             target_index = build_directory_index(target, ignore_filetype)
             matched = match_indexed_file(source, target_index, ignore_filetype)
             return [
@@ -157,3 +157,10 @@ class MergePlanner:
         raise ValueError(
             "Folder-to-folder merge requires --out to point to a directory."
         )
+
+    def _is_output_directory_path(self, out: Path | None) -> bool:
+        if out is None:
+            return False
+        if out.exists():
+            return out.is_dir()
+        return out.suffix.lower() not in SUPPORTED_FILE_SUFFIXES

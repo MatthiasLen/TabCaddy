@@ -121,6 +121,25 @@ def test_compile_transform_scaffold_and_diff_commands(tmp_path: Path) -> None:
     assert "Statistics Changes" in diff_result.stdout
 
 
+def test_compile_accepts_parquet_inputs(tmp_path: Path) -> None:
+    data = tmp_path / "data"
+    data.mkdir()
+    pl.DataFrame(
+        [
+            {"id": 1, "value": 10.0},
+            {"id": 2, "value": 11.0},
+        ]
+    ).write_parquet(data / "a.parquet")
+
+    compile_result = runner.invoke(
+        app, ["compile", str(data), "--output", str(tmp_path / "compiled")]
+    )
+
+    assert compile_result.exit_code == 0
+    assert (tmp_path / "compiled" / "metadata.json").exists()
+    assert any((tmp_path / "compiled" / "data").glob("*.parquet"))
+
+
 def test_diff_metadata_level_hides_schema_and_statistics_sections(
     tmp_path: Path,
 ) -> None:
