@@ -5,7 +5,7 @@ from pathlib import Path
 from tabcaddy.domain.models import DatasetSource, SourceType
 
 
-SUPPORTED_FILE_SUFFIXES = {".csv", ".feather", ".arrow"}
+SUPPORTED_FILE_SUFFIXES = {".csv", ".feather", ".arrow", ".parquet"}
 
 
 def is_compiled_dataset(path: Path) -> bool:

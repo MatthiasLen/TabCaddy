@@ -8,6 +8,7 @@ from tabcaddy.application.compile_dataset import CompileDataset
 from tabcaddy.application.diff_datasets import DiffDatasets
 from tabcaddy.application.generate_analysis import GenerateAnalysis
 from tabcaddy.application.head_dataset import HeadDataset
+from tabcaddy.application.merge import MergeDatasets
 from tabcaddy.application.scaffold_transform import ScaffoldTransform
 from tabcaddy.application.transform_dataset import TransformDataset
 from tabcaddy.domain.models import DiffLevel
@@ -179,6 +180,55 @@ def head(
                 frame.df, frame.path, render=render, show_meta=show_meta
             )
         )
+
+
+@app.command(help="Merge files or folders with schema validation and conflict checks")
+def merge(
+    source: Path,
+    target: Path,
+    out: Path | None = typer.Option(
+        None,
+        "--out",
+        help="Output file or folder. Required unless --inplace is provided.",
+    ),
+    inplace: bool = typer.Option(
+        False,
+        "--inplace",
+        help="Modify the resolved target path in place using an atomic replace.",
+    ),
+    on: list[str] | None = typer.Option(
+        None,
+        "--on",
+        help="One or more key columns used for conflict-aware key merges.",
+    ),
+    ignore_filetype: bool = typer.Option(
+        False,
+        "--ignore-filetype",
+        help="Allow folder matching across CSV, Parquet, Feather, and Arrow extensions.",
+    ),
+) -> None:
+    console = create_console()
+
+    try:
+        written = MergeDatasets().run(
+            source=source,
+            target=target,
+            out=out,
+            inplace=inplace,
+            on_columns=tuple(on or ()),
+            ignore_filetype=ignore_filetype,
+        )
+    except (FileExistsError, FileNotFoundError, ValueError) as error:
+        console.print(f"[red]{error}[/red]")
+        raise typer.Exit(code=1) from error
+
+    if len(written) == 1:
+        console.print(f"Merged dataset written to [green]{written[0]}[/green]")
+        return
+
+    console.print(
+        f"Merged {len(written)} files into [green]{written[0].parent}[/green]"
+    )
 
 
 def main() -> None:

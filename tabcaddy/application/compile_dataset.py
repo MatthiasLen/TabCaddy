@@ -11,12 +11,15 @@ import polars as pl
 
 from tabcaddy.infrastructure.csv_reader import read_csv
 from tabcaddy.infrastructure.feather_reader import read_feather
+from tabcaddy.infrastructure.parquet_dataset_reader import read_parquet_file
 from tabcaddy.infrastructure.parquet_dataset_writer import write_parquet_dataset
 
 
 def _read_dataframe(path: Path):
     if path.suffix.lower() == ".csv":
         return read_csv(path)
+    if path.suffix.lower() == ".parquet":
+        return read_parquet_file(path)
     return read_feather(path)
 
 
