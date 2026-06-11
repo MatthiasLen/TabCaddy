@@ -50,8 +50,14 @@ class MergeDatasets:
             ignore_filetype=ignore_filetype,
         )
 
-        written: list[Path] = []
-        for operation in prepared_operations:
-            self._executor.execute(operation, on_columns=on_columns, inplace=inplace)
-            written.append(operation.destination)
-        return written
+        transaction_root: Path | None = None
+        if output_path is not None and len(prepared_operations) > 1:
+            transaction_root = output_path
+        elif inplace and target_path.is_dir():
+            transaction_root = target_path
+
+        return self._executor.execute_all(
+            prepared_operations,
+            on_columns=on_columns,
+            transaction_root=transaction_root,
+        )

@@ -130,28 +130,36 @@ def cast_lazyframe(frame: pl.LazyFrame, schema: pl.Schema) -> pl.LazyFrame:
     )
 
 
+def stage_lazyframe(
+    lazy_frame: pl.LazyFrame,
+    destination: Path,
+    format_hint: Path,
+) -> None:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+
+    if destination.exists():
+        destination.unlink()
+
+    try:
+        sink_lazyframe(lazy_frame, destination, format_hint)
+    except pl.exceptions.PolarsError as error:
+        cleanup_temp_file(destination)
+        raise ValueError(str(error)) from error
+    except Exception:
+        cleanup_temp_file(destination)
+        raise
+
+
 def write_lazyframe(
     lazy_frame: pl.LazyFrame,
     destination: Path,
     inplace: bool,
     format_hint: Path,
 ) -> None:
-    destination.parent.mkdir(parents=True, exist_ok=True)
     target_path = destination if not inplace else temp_path(destination)
-
-    if target_path.exists():
-        target_path.unlink()
-
-    try:
-        sink_lazyframe(lazy_frame, target_path, format_hint)
-        if inplace:
-            os.replace(target_path, destination)
-    except pl.exceptions.PolarsError as error:
-        cleanup_temp_file(target_path)
-        raise ValueError(str(error)) from error
-    except Exception:
-        cleanup_temp_file(target_path)
-        raise
+    stage_lazyframe(lazy_frame, target_path, format_hint)
+    if inplace:
+        os.replace(target_path, destination)
 
 
 def sink_lazyframe(

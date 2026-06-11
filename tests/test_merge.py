@@ -74,6 +74,34 @@ def test_merge_key_conflict_fails_without_writing_output(tmp_path: Path) -> None
     assert "Conflicting duplicate key" in result.stdout
 
 
+def test_merge_folder_conflict_fails_without_writing_any_output(tmp_path: Path) -> None:
+    source_dir = tmp_path / "incoming"
+    target_dir = tmp_path / "archive"
+    output_dir = tmp_path / "combined"
+
+    _write_frame(source_dir / "a_ok.csv", [{"id": 2, "value": 20}])
+    _write_frame(source_dir / "b_conflict.csv", [{"id": 1, "value": 99}])
+    _write_frame(target_dir / "a_ok.csv", [{"id": 1, "value": 10}])
+    _write_frame(target_dir / "b_conflict.csv", [{"id": 1, "value": 10}])
+
+    result = runner.invoke(
+        app,
+        [
+            "merge",
+            str(source_dir),
+            str(target_dir),
+            "--out",
+            str(output_dir),
+            "--on",
+            "id",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "Conflicting duplicate key" in result.stdout
+    assert not output_dir.exists()
+
+
 def test_merge_file_into_folder_inplace_copies_when_no_match_exists(
     tmp_path: Path,
 ) -> None:
@@ -154,6 +182,39 @@ def test_merge_folder_to_folder_out_dir_merges_matches_and_copies_missing(
     assert _read_frame(output_dir / "target_only.csv").to_dicts() == [
         {"id": 8, "value": 80}
     ]
+
+
+def test_merge_folder_inplace_cast_failure_rolls_back_all_changes(
+    tmp_path: Path,
+) -> None:
+    source_dir = tmp_path / "incoming"
+    target_dir = tmp_path / "archive"
+
+    _write_frame(source_dir / "a_ok.csv", [{"id": 1, "value": 11}])
+    _write_frame(source_dir / "b_new.csv", [{"id": 9, "value": 90}])
+    _write_frame(source_dir / "c_bad.csv", [{"id": 2, "value": "oops"}])
+    _write_frame(target_dir / "a_ok.parquet", [{"id": 1, "value": 10}])
+    _write_frame(target_dir / "c_bad.parquet", [{"id": 2, "value": 20}])
+
+    result = runner.invoke(
+        app,
+        [
+            "merge",
+            str(source_dir),
+            str(target_dir),
+            "--inplace",
+            "--ignore-filetype",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert _read_frame(target_dir / "a_ok.parquet").to_dicts() == [
+        {"id": 1, "value": 10}
+    ]
+    assert _read_frame(target_dir / "c_bad.parquet").to_dicts() == [
+        {"id": 2, "value": 20}
+    ]
+    assert not (target_dir / "b_new.csv").exists()
 
 
 def test_merge_folder_to_folder_out_rejects_file_path_even_for_single_source_file(
