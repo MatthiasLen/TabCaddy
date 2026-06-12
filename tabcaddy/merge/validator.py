@@ -136,7 +136,9 @@ class MergeValidator:
         inplace: bool,
     ) -> str | None:
         if destination in destinations:
-            return f"Multiple source files resolve to the same destination: {destination}"
+            return (
+                f"Multiple source files resolve to the same destination: {destination}"
+            )
         destinations.add(destination)
 
         if destination.suffix.lower() not in SUPPORTED_FILE_SUFFIXES:

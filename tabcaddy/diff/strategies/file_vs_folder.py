@@ -52,7 +52,9 @@ class MixedDiffer:
         if match.matched_file is None:
             raise ValueError("Modified file-folder match requires a matched file")
 
-        matched_source = DatasetSource(path=match.matched_file, source_type=SourceType.FILE)
+        matched_source = DatasetSource(
+            path=match.matched_file, source_type=SourceType.FILE
+        )
         left_analysis, right_analysis = analyze_pair(
             self._generate_analysis,
             file_source,
@@ -70,8 +72,14 @@ class MixedDiffer:
     def _split_sources(
         self, left: DatasetSource, right: DatasetSource
     ) -> tuple[DatasetSource, DatasetSource]:
-        if left.source_type == SourceType.FILE and right.source_type == SourceType.FOLDER:
+        if (
+            left.source_type == SourceType.FILE
+            and right.source_type == SourceType.FOLDER
+        ):
             return left, right
-        if left.source_type == SourceType.FOLDER and right.source_type == SourceType.FILE:
+        if (
+            left.source_type == SourceType.FOLDER
+            and right.source_type == SourceType.FILE
+        ):
             return right, left
         raise ValueError("MixedDiffer requires one file source and one folder source.")

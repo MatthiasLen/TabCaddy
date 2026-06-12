@@ -43,7 +43,8 @@ def diff_folder_inventory(
         added_files=added_files,
         removed_files=removed_files,
         modified_files=modified_files,
-        matching_files=len(left_files.keys() & right_files.keys()) - len(modified_files),
+        matching_files=len(left_files.keys() & right_files.keys())
+        - len(modified_files),
         only_in_left=len(removed_files),
         only_in_right=len(added_files),
     )

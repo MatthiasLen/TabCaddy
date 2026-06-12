@@ -5,7 +5,11 @@ from enum import Enum
 from pathlib import Path
 
 from tabcaddy.analysis.sources import iter_dataset_files
-from tabcaddy.diff.hash_utils import content_hash, content_matches, relative_dataset_path
+from tabcaddy.diff.hash_utils import (
+    content_hash,
+    content_matches,
+    relative_dataset_path,
+)
 from tabcaddy.domain.models import DatasetSource
 
 

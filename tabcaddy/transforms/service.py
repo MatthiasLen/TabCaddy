@@ -14,7 +14,11 @@ from tabcaddy.analysis.sources import iter_dataset_files
 from tabcaddy.domain.models import DatasetSource, ProfileMode, SourceType
 from tabcaddy.shared.dataset_io import read_dataframe, write_dataframe
 from tabcaddy.shared.serialization import analysis_to_dict
-from tabcaddy.transforms.loader import TransformContext, TransformLoader, TransformMetadata
+from tabcaddy.transforms.loader import (
+    TransformContext,
+    TransformLoader,
+    TransformMetadata,
+)
 
 
 def _apply_transform(
@@ -118,7 +122,9 @@ class TransformDataset:
 
         source_analysis = self._analysis_builder.load_compiled_analysis(source)
         if source_analysis is not None:
-            analysis.metadata.source_file_count = source_analysis.metadata.source_file_count
+            analysis.metadata.source_file_count = (
+                source_analysis.metadata.source_file_count
+            )
 
         payload = analysis_to_dict(analysis)
         payload["compiled"] = {

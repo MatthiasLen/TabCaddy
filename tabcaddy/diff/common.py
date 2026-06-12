@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from tabcaddy.domain.models import DatasetAnalysis, DatasetSource, DiffLevel, ProfileMode
+from tabcaddy.domain.models import (
+    DatasetAnalysis,
+    DatasetSource,
+    DiffLevel,
+    ProfileMode,
+)
 
 
 def profile_mode_for_level(level: DiffLevel) -> ProfileMode:

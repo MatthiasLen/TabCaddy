@@ -113,8 +113,7 @@ def analysis_from_dict(payload: dict[str, Any]) -> DatasetAnalysis:
                     histogram=None
                     if stats.get("histogram") is None
                     else [
-                        (entry["label"], entry["count"])
-                        for entry in stats["histogram"]
+                        (entry["label"], entry["count"]) for entry in stats["histogram"]
                     ],
                 )
                 for name, stats in statistics_payload.get("columns", {}).items()
