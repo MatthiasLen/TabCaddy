@@ -68,6 +68,8 @@ def _find_modified_files(
 
         if left_stat.st_size != right_stat.st_size:
             modified.append(file_name)
+        elif _is_same_physical_file(left_path, right_path, left_stat, right_stat):
+            continue
         else:
             hash_needed.append((file_name, left_path, right_path))
 
@@ -99,3 +101,24 @@ def _check_file_hashes(file_tuples: list[tuple[str, Path, Path]]) -> list[str]:
             modified.append(file_name)
 
     return modified
+
+
+def _is_same_physical_file(
+    left_path: Path,
+    right_path: Path,
+    left_stat,
+    right_stat,
+) -> bool:
+    # Matching mtimes are not enough across different filesystems or rapid rewrites.
+    # Only skip hashing when both entries resolve to the same underlying file.
+    samefile = getattr(left_path, "samefile", None)
+    if samefile is None:
+        return False
+
+    if left_stat.st_mtime_ns != right_stat.st_mtime_ns:
+        return False
+
+    try:
+        return left_path.samefile(right_path)
+    except OSError:
+        return False

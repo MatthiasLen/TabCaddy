@@ -14,12 +14,15 @@ from tabcaddy.domain.models import (
     DatasetAnalysis,
     DatasetMetadata,
     DatasetSource,
+    DiffComparisonType,
     DatasetStatistics,
     DiffLevel,
+    DiffReport,
+    DiffSummary,
     SchemaSignature,
     SourceType,
 )
-from tabcaddy.shared.serialization import analysis_to_dict
+from tabcaddy.shared.serialization import analysis_to_dict, diff_report_to_dict
 
 
 def _write_compiled_dataset(
@@ -321,3 +324,28 @@ def test_compare_analyses_ignores_matching_nan_statistics() -> None:
     report = compare_analyses(left, right, DiffLevel.FULL)
 
     assert report.statistics_changes == []
+
+
+def test_diff_report_to_dict_includes_summary_payload() -> None:
+    report = DiffReport(
+        file_changes=["Modified file: data.csv"],
+        summary=DiffSummary(
+            comparison_type=DiffComparisonType.FILE_FOLDER,
+            match_status="ambiguous",
+            candidate_paths=["data.csv", "nested/data.csv"],
+        ),
+    )
+
+    payload = diff_report_to_dict(report)
+
+    assert payload["summary"] == {
+        "comparison_type": "file_vs_folder",
+        "content_status": None,
+        "match_status": "ambiguous",
+        "matched_path": None,
+        "candidate_paths": ["data.csv", "nested/data.csv"],
+        "matching_files": None,
+        "modified_files": None,
+        "only_in_left": None,
+        "only_in_right": None,
+    }

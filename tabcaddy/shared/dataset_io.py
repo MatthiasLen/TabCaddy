@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from json import JSONDecodeError
 from pathlib import Path
 from typing import Iterable
 
@@ -63,7 +64,13 @@ def read_compiled_analysis(path: Path) -> DatasetAnalysis | None:
     metadata_file = path / "metadata.json"
     if not metadata_file.exists():
         return None
-    return analysis_from_dict(json.loads(metadata_file.read_text(encoding="utf-8")))
+    try:
+        payload = json.loads(metadata_file.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            return None
+        return analysis_from_dict(payload)
+    except (JSONDecodeError, OSError, TypeError, ValueError, KeyError):
+        return None
 
 
 def write_parquet_dataset(

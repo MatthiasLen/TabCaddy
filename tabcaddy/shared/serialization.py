@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import asdict
 from datetime import date, datetime, time
 from typing import Any
 
@@ -130,4 +131,7 @@ def diff_report_to_dict(report: DiffReport) -> dict[str, Any]:
         "schema_changes": list(report.schema_changes),
         "statistics_changes": list(report.statistics_changes),
         "warnings": list(report.warnings),
+        "summary": None
+        if report.summary is None
+        else _serialize_value(asdict(report.summary)),
     }

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import polars as pl
@@ -56,6 +57,30 @@ def test_folder_inventory_uses_hash_check_when_only_mtime_differs(
     assert right_file.stat().st_mtime >= left_stat.st_mtime
     assert inventory.modified_files == []
     assert inventory.matching_files == 1
+
+
+def test_folder_inventory_hashes_same_size_files_even_when_mtime_matches(
+    tmp_path: Path,
+) -> None:
+    left = tmp_path / "left"
+    right = tmp_path / "right"
+    left.mkdir()
+    right.mkdir()
+
+    left_file = left / "changed.csv"
+    right_file = right / "changed.csv"
+    pl.DataFrame({"id": [4], "value": [40]}).write_csv(left_file)
+    pl.DataFrame({"id": [4], "value": [99]}).write_csv(right_file)
+
+    stat = left_file.stat()
+    os.utime(right_file, ns=(stat.st_atime_ns, stat.st_mtime_ns))
+
+    inventory = diff_folder_inventory(resolve_source(left), resolve_source(right))
+
+    assert left_file.stat().st_size == right_file.stat().st_size
+    assert left_file.stat().st_mtime_ns == right_file.stat().st_mtime_ns
+    assert inventory.modified_files == ["changed.csv"]
+    assert inventory.matching_files == 0
 
 
 def test_file_folder_match_returns_ambiguous_candidates_in_relative_order(
