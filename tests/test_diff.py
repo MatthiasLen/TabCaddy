@@ -2,13 +2,16 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 import json
+import math
 from pathlib import Path
 
 import polars as pl
 
 from tabcaddy.application.diff_datasets import DiffDatasets
 from tabcaddy.application.generate_analysis import GenerateAnalysis
+from tabcaddy.differ.comparison import compare_analyses
 from tabcaddy.domain.models import (
+    ColumnStatistics,
     DatasetAnalysis,
     DatasetMetadata,
     DatasetSource,
@@ -231,3 +234,92 @@ def test_compiled_diff_reports_changed_compiled_provenance(tmp_path: Path) -> No
     report = DiffDatasets(GenerateAnalysis()).run(left, right, DiffLevel.FULL)
 
     assert "Compiled dataset provenance changed" in report.metadata_changes
+
+
+def test_compiled_diff_treats_malformed_metadata_as_missing_provenance(
+    tmp_path: Path,
+) -> None:
+    left = _write_compiled_dataset(
+        tmp_path / "left_compiled",
+        created_at=datetime(2026, 1, 1, tzinfo=UTC),
+        compiled={
+            "source": "C:/dataset-a",
+            "selected_schema_hash": "schema-1",
+            "written_parts": ["data/part-000.parquet"],
+        },
+    )
+    right = _write_compiled_dataset(
+        tmp_path / "right_compiled",
+        created_at=datetime(2026, 1, 1, tzinfo=UTC),
+        compiled={
+            "source": "C:/dataset-a",
+            "selected_schema_hash": "schema-1",
+            "written_parts": ["data/part-000.parquet"],
+        },
+    )
+    (right.path / "metadata.json").write_text("{not-json", encoding="utf-8")
+
+    report = DiffDatasets(GenerateAnalysis()).run(left, right, DiffLevel.FULL)
+
+    assert "Compiled dataset provenance changed" in report.metadata_changes
+
+
+def test_compare_analyses_ignores_matching_nan_statistics() -> None:
+    left = DatasetAnalysis(
+        metadata=DatasetMetadata(
+            version=1,
+            created_at=datetime(2026, 1, 1, tzinfo=UTC),
+            row_count=1,
+            column_count=1,
+            source_file_count=1,
+            schema_hash="schema-1",
+            column_hashes={"value": "hash-1"},
+        ),
+        schemas=[SchemaSignature(columns=[], hash="schema-1", occurrence_count=1)],
+        statistics=DatasetStatistics(
+            columns={
+                "value": ColumnStatistics(
+                    dtype="Float64",
+                    null_rate=math.nan,
+                    unique_estimate=None,
+                    min_value=None,
+                    max_value=None,
+                    mean=math.nan,
+                    median=math.nan,
+                    stddev=math.nan,
+                )
+            }
+        ),
+        warnings=[],
+    )
+    right = DatasetAnalysis(
+        metadata=DatasetMetadata(
+            version=1,
+            created_at=datetime(2026, 1, 1, tzinfo=UTC),
+            row_count=1,
+            column_count=1,
+            source_file_count=1,
+            schema_hash="schema-1",
+            column_hashes={"value": "hash-1"},
+        ),
+        schemas=[SchemaSignature(columns=[], hash="schema-1", occurrence_count=1)],
+        statistics=DatasetStatistics(
+            columns={
+                "value": ColumnStatistics(
+                    dtype="Float64",
+                    null_rate=math.nan,
+                    unique_estimate=None,
+                    min_value=None,
+                    max_value=None,
+                    mean=math.nan,
+                    median=math.nan,
+                    stddev=math.nan,
+                )
+            }
+        ),
+        warnings=[],
+    )
+
+    report = compare_analyses(left, right, DiffLevel.FULL)
+
+    assert report.statistics_changes == []

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from json import JSONDecodeError
 import math
 from dataclasses import dataclass
 from datetime import date, datetime, time
@@ -183,7 +184,16 @@ class AnalysisBuilder:
         metadata_path = source.path / "metadata.json"
         if not metadata_path.exists():
             return None
-        return analysis_from_dict(json.loads(metadata_path.read_text(encoding="utf-8")))
+        try:
+            payload = json.loads(metadata_path.read_text(encoding="utf-8"))
+        except (JSONDecodeError, OSError):
+            return None
+        if not isinstance(payload, dict):
+            return None
+        try:
+            return analysis_from_dict(payload)
+        except (KeyError, TypeError, ValueError):
+            return None
 
     def load_compiled_result(self, source: DatasetSource) -> AnalysisBuildResult | None:
         """Load a pre-computed analysis and pair it with current file records."""
