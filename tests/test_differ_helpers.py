@@ -4,9 +4,8 @@ from pathlib import Path
 
 import polars as pl
 
-from tabcaddy.differ.folder_inventory import diff_folder_inventory
-from tabcaddy.differ.matching import MatchStatus, resolve_file_folder_match
-from tabcaddy.infrastructure.source_resolver import resolve_source
+from tabcaddy.analysis import resolve_source
+from tabcaddy.diff import MatchStatus, diff_folder_inventory, resolve_file_folder_match
 
 
 def test_folder_inventory_reports_added_removed_and_modified_files(

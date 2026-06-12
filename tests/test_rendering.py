@@ -13,7 +13,7 @@ from tabcaddy.domain.models import DiffLevel
 from tabcaddy.domain.models import DiffReport
 from tabcaddy.domain.models import DiffSummary
 from tabcaddy.domain.models import SchemaSignature
-from tabcaddy.infrastructure.schema_analyzer import FileSchemaRecord
+from tabcaddy.analysis.schema import FileSchemaRecord
 from tabcaddy.rendering.console import create_console
 from tabcaddy.rendering.console import RenderProfile
 from tabcaddy.rendering.views.diff import build_diff_view

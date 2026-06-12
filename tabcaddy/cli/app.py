@@ -4,23 +4,20 @@ from pathlib import Path
 
 import typer
 
-from tabcaddy.application.compile_dataset import CompileDataset
-from tabcaddy.application.diff_datasets import DiffDatasets
-from tabcaddy.application.generate_analysis import GenerateAnalysis
-from tabcaddy.application.head_dataset import HeadDataset
-from tabcaddy.application.merge import MergeDatasets
-from tabcaddy.application.scaffold_transform import ScaffoldTransform
-from tabcaddy.application.transform_dataset import TransformDataset
+from tabcaddy.analysis import AnalysisBuilder, GenerateAnalysis, resolve_source
+from tabcaddy.compilation import CompileDataset
+from tabcaddy.diff import DiffDatasets
 from tabcaddy.domain.models import DiffLevel
 from tabcaddy.domain.models import ProfileMode
-from tabcaddy.infrastructure.analysis_builder import AnalysisBuilder
-from tabcaddy.infrastructure.source_resolver import resolve_source
+from tabcaddy.merge import MergeDatasets
+from tabcaddy.preview import HeadDataset
 from tabcaddy.rendering.console import create_console
 from tabcaddy.rendering.console import resolve_render_profile
 from tabcaddy.rendering.views.diff import build_diff_view
 from tabcaddy.rendering.views.head import build_file_head_view, build_folder_head_view
 from tabcaddy.rendering.views.schema import build_schema_view
 from tabcaddy.rendering.views.summary import build_summary_view
+from tabcaddy.transforms import ScaffoldTransform, TransformDataset
 
 
 app = typer.Typer(

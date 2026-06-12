@@ -4,14 +4,16 @@ from pathlib import Path
 
 import polars as pl
 
-from tabcaddy.application.generate_analysis import GenerateAnalysis
-from tabcaddy.application.scaffold_transform import ScaffoldTransform
+from tabcaddy.analysis import (
+    AnalysisBuilder,
+    CacheManager,
+    GenerateAnalysis,
+    SchemaAnalyzer,
+    resolve_source,
+)
+from tabcaddy.diff import compare_analyses
 from tabcaddy.domain.models import DiffLevel, ProfileMode
-from tabcaddy.infrastructure.analysis_builder import AnalysisBuilder
-from tabcaddy.infrastructure.cache_manager import CacheManager
-from tabcaddy.infrastructure.diff_support import compare_analyses
-from tabcaddy.infrastructure.schema_analyzer import SchemaAnalyzer
-from tabcaddy.infrastructure.source_resolver import resolve_source
+from tabcaddy.transforms import ScaffoldTransform
 
 
 def _write_csv(path: Path, rows: list[dict]) -> None:

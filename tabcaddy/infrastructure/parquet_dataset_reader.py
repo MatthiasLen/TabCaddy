@@ -6,7 +6,7 @@ from pathlib import Path
 import polars as pl
 
 from tabcaddy.domain.models import DatasetAnalysis
-from tabcaddy.domain.serialization import analysis_from_dict
+from tabcaddy.shared.serialization import analysis_from_dict
 
 
 def scan_parquet_dataset(path: Path) -> pl.LazyFrame:

@@ -5,12 +5,15 @@ from pathlib import Path
 import polars as pl
 import pytest
 
-from tabcaddy.application.generate_synthetic_test_assets import (
+from tabcaddy.merge import (
+    MergePlanner,
+    MergeValidator,
+    PlannedOperation,
+    PreparedOperation,
+)
+from tabcaddy.test_support.synthetic_assets import (
     generate_synthetic_test_assets,
 )
-from tabcaddy.application.merge.common import PlannedOperation, PreparedOperation
-from tabcaddy.application.merge.planner import MergePlanner
-from tabcaddy.application.merge.validator import MergeValidator
 
 
 def _write_frame(path: Path, rows: list[dict[str, object]]) -> None:

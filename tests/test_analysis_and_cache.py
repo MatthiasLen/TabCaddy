@@ -6,11 +6,13 @@ from pathlib import Path
 import pytest
 import polars as pl
 
-from tabcaddy.application.generate_analysis import GenerateAnalysis
+from tabcaddy.analysis import (
+    AnalysisBuilder,
+    CacheManager,
+    GenerateAnalysis,
+    resolve_source,
+)
 from tabcaddy.domain.models import ProfileMode
-from tabcaddy.infrastructure.analysis_builder import AnalysisBuilder
-from tabcaddy.infrastructure.cache_manager import CacheManager
-from tabcaddy.infrastructure.source_resolver import resolve_source
 
 
 def test_analysis_builder_computes_metadata_and_statistics(homogeneous_folder) -> None:

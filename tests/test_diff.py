@@ -7,9 +7,8 @@ from pathlib import Path
 
 import polars as pl
 
-from tabcaddy.application.diff_datasets import DiffDatasets
-from tabcaddy.application.generate_analysis import GenerateAnalysis
-from tabcaddy.differ.comparison import compare_analyses
+from tabcaddy.analysis import GenerateAnalysis, resolve_source
+from tabcaddy.diff import DiffDatasets, compare_analyses
 from tabcaddy.domain.models import (
     ColumnStatistics,
     DatasetAnalysis,
@@ -20,8 +19,7 @@ from tabcaddy.domain.models import (
     SchemaSignature,
     SourceType,
 )
-from tabcaddy.domain.serialization import analysis_to_dict
-from tabcaddy.infrastructure.source_resolver import resolve_source
+from tabcaddy.shared.serialization import analysis_to_dict
 
 
 def _write_compiled_dataset(
