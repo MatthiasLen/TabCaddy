@@ -208,6 +208,35 @@ def test_merge_schema_evolution_allow_additive_append_preserves_target_columns(
     ]
 
 
+def test_merge_file_to_folder_ignores_unrelated_duplicate_stems(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "incoming" / "service" / "orders.csv"
+    target_dir = tmp_path / "archive"
+    output_dir = tmp_path / "merged"
+
+    _write_frame(source, [{"id": 2, "value": 20}])
+    _write_frame(target_dir / "service" / "orders.csv", [{"id": 1, "value": 10}])
+    _write_frame(
+        target_dir / "telemetry" / "mcu" / "duplicate.csv", [{"id": 3, "value": 30}]
+    )
+    _write_frame(
+        target_dir / "telemetry" / "version" / "duplicate.csv",
+        [{"id": 4, "value": 40}],
+    )
+
+    result = runner.invoke(
+        app,
+        ["merge", str(source), str(target_dir), "--out", str(output_dir)],
+    )
+
+    assert result.exit_code == 0
+    assert _read_frame(output_dir / "service" / "orders.csv").to_dicts() == [
+        {"id": 1, "value": 10},
+        {"id": 2, "value": 20},
+    ]
+
+
 def test_merge_schema_evolution_allow_additive_upsert_handles_expanded_schema(
     tmp_path: Path,
 ) -> None:

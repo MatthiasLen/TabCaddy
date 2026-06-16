@@ -71,6 +71,43 @@ def test_planner_rejects_ambiguous_file_to_folder_match(tmp_path: Path) -> None:
         )
 
 
+def test_planner_file_to_folder_ignores_unrelated_duplicate_stems(
+    tmp_path: Path,
+) -> None:
+    planner = MergePlanner()
+    source = tmp_path / "incoming" / "service" / "orders.csv"
+    target_dir = tmp_path / "archive"
+    out_dir = tmp_path / "merged"
+
+    _write_frame(source, [{"id": 2, "value": 20}])
+    _write_frame(target_dir / "service" / "orders.csv", [{"id": 1, "value": 10}])
+    _write_frame(
+        target_dir / "telemetry" / "mcu" / "duplicate.csv", [{"id": 3, "value": 30}]
+    )
+    _write_frame(
+        target_dir / "telemetry" / "version" / "duplicate.csv",
+        [{"id": 4, "value": 40}],
+    )
+
+    operations = planner.plan(
+        source=source,
+        target=target_dir,
+        out=out_dir,
+        inplace=False,
+        ignore_filetype=False,
+    )
+
+    assert operations == [
+        PlannedOperation(
+            source=source,
+            target=target_dir / "service" / "orders.csv",
+            destination=out_dir / "service" / "orders.csv",
+            output_directory=True,
+            kind="merge",
+        )
+    ]
+
+
 def test_planner_file_to_folder_treats_nonexistent_dotted_out_as_directory(
     tmp_path: Path,
 ) -> None:

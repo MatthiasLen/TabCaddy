@@ -76,22 +76,26 @@ def compile_dataset(
     interactive: bool = typer.Option(False, "--interactive"),
 ) -> None:
     console = create_console()
-    source = resolve_source(folder)
-    selected_schema = schema_index
+    try:
+        source = resolve_source(folder)
+        selected_schema = schema_index
 
-    if interactive and selected_schema is None:
-        preview = AnalysisBuilder().build(source, ProfileMode.QUICK)
-        if len(preview.analysis.schemas) > 1:
-            console.print(
-                f"Multiple schemas detected ({len(preview.analysis.schemas)}): "
-            )
-            for index, sch in enumerate(preview.analysis.schemas, start=1):
+        if interactive and selected_schema is None:
+            preview = AnalysisBuilder().build(source, ProfileMode.QUICK)
+            if len(preview.analysis.schemas) > 1:
                 console.print(
-                    f"  [cyan]Schema {index}[/cyan]: {len(sch.columns)} columns, observed in {sch.occurrence_count} files"
+                    f"Multiple schemas detected ({len(preview.analysis.schemas)}): "
                 )
-            selected_schema = typer.prompt("Choose schema number", type=int)
+                for index, sch in enumerate(preview.analysis.schemas, start=1):
+                    console.print(
+                        f"  [cyan]Schema {index}[/cyan]: {len(sch.columns)} columns, observed in {sch.occurrence_count} files"
+                    )
+                selected_schema = typer.prompt("Choose schema number", type=int)
 
-    output_path, skipped = CompileDataset().run(source, output, selected_schema)
+        output_path, skipped = CompileDataset().run(source, output, selected_schema)
+    except (FileExistsError, FileNotFoundError, ValueError) as error:
+        console.print(f"[red]{error}[/red]")
+        raise typer.Exit(code=1) from error
 
     console.print(f"Compiled dataset written to [green]{output_path}[/green]")
     if skipped:

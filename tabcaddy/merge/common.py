@@ -104,6 +104,28 @@ def match_indexed_file(
     return target_index.get(match_key(source, ignore_filetype, relative_to=relative_to))
 
 
+def match_file_in_directory(
+    source: Path,
+    target_folder: Path,
+    ignore_filetype: bool,
+    source_relative_to: Path | None = None,
+    target_relative_to: Path | None = None,
+) -> Path | None:
+    source_key = match_key(source, ignore_filetype, relative_to=source_relative_to)
+    candidates = [
+        path
+        for path in iter_supported_files(target_folder, allow_empty=True)
+        if match_key(path, ignore_filetype, relative_to=target_relative_to)
+        == source_key
+    ]
+    if len(candidates) > 1:
+        sample = ", ".join(str(path) for path in candidates)
+        raise ValueError(f"Ambiguous target match detected: {sample}")
+    if not candidates:
+        return None
+    return candidates[0]
+
+
 def match_key(
     path: Path,
     ignore_filetype: bool,

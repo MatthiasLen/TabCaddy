@@ -7,6 +7,7 @@ from tabcaddy.merge.common import (
     PlannedOperation,
     build_directory_index,
     iter_supported_files,
+    match_file_in_directory,
     match_indexed_file,
     supports_merge_pair,
 )
@@ -45,8 +46,11 @@ class MergePlanner:
 
         if source.is_file() and target.is_dir():
             output_directory = self._is_output_directory_path(out)
-            target_index = build_directory_index(target, ignore_filetype)
-            matched = match_indexed_file(source, target_index, ignore_filetype)
+            matched = match_file_in_directory(
+                source=source,
+                target_folder=target,
+                ignore_filetype=ignore_filetype,
+            )
             return [
                 PlannedOperation(
                     source=source,

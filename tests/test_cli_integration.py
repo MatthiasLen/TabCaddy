@@ -85,6 +85,22 @@ def test_compile_interactive_schema_selection_uses_one_based_index(
     assert "Skipped 1 files from non-selected schemas." in result.stdout
 
 
+def test_compile_without_schema_reports_validation_error_without_traceback(
+    tmp_path: Path, drift_folder
+) -> None:
+    compiled = tmp_path / "compiled_without_schema"
+
+    result = runner.invoke(
+        app,
+        ["compile", str(drift_folder), "--output", str(compiled)],
+    )
+
+    assert result.exit_code == 1
+    assert "Multiple schemas detected. Re-run with --schema." in result.stdout
+    assert "Traceback" not in result.stdout
+    assert not compiled.exists()
+
+
 def test_transform_compiled_dataset_writes_compiled_output(
     tmp_path: Path, homogeneous_folder
 ) -> None:
