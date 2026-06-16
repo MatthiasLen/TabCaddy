@@ -112,8 +112,12 @@ def transform(
     workers: int = typer.Option(1, "--workers", min=1),
 ) -> None:
     console = create_console()
-    source = resolve_source(input_path)
-    destination = TransformDataset().run(source, transform_path, output_path, workers)
+    try:
+        source = resolve_source(input_path)
+        destination = TransformDataset().run(source, transform_path, output_path, workers)
+    except (FileExistsError, FileNotFoundError, ValueError, TypeError) as error:
+        console.print(f"[red]{error}[/red]")
+        raise typer.Exit(code=1) from error
     console.print(f"Transformed files written to [green]{destination}[/green]")
 
 

@@ -79,6 +79,32 @@ def test_scaffold_transform_fails_when_output_file_exists(tmp_path: Path) -> Non
     assert scaffold_result.exit_code == 2
 
 
+def test_transform_fails_cleanly_when_output_folder_exists(tmp_path: Path) -> None:
+    data = tmp_path / "data"
+    data.mkdir()
+    _write_csv(data / "a.csv", [{"id": 1, "value": 10.0}])
+
+    transform_script = tmp_path / "transform.py"
+    transform_script.write_text(
+        "import polars as pl\n\n"
+        "def transform(df, context=None):\n"
+        "    return df\n",
+        encoding="utf-8",
+    )
+
+    output_dir = tmp_path / "transformed"
+    output_dir.mkdir()
+
+    transform_result = runner.invoke(
+        app,
+        ["transform", str(data), str(transform_script), str(output_dir)],
+    )
+
+    assert transform_result.exit_code == 1
+    assert "Output folder already exists" in transform_result.stdout
+    assert "Traceback" not in transform_result.stdout
+
+
 def test_compile_transform_scaffold_and_diff_commands(tmp_path: Path) -> None:
     left = tmp_path / "left"
     right = tmp_path / "right"
