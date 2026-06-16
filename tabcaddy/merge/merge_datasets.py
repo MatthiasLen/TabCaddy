@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from tabcaddy.merge.common import resolve_merge_path
+from tabcaddy.merge.common import MergeStrategy, resolve_merge_path
 from tabcaddy.merge.executor import MergeExecutor
 from tabcaddy.merge.planner import MergePlanner
 from tabcaddy.merge.validator import MergeValidator
@@ -26,6 +26,7 @@ class MergeDatasets:
         out: Path | None,
         inplace: bool,
         on_columns: tuple[str, ...],
+        strategy: str,
         ignore_filetype: bool,
     ) -> list[Path]:
         source_path = resolve_merge_path(source, role="source")
@@ -34,6 +35,10 @@ class MergeDatasets:
 
         if inplace == (output_path is not None):
             raise ValueError("Provide exactly one of --out or --inplace.")
+
+        merge_strategy = self._resolve_strategy(strategy)
+        if merge_strategy == "upsert" and not on_columns:
+            raise ValueError("--strategy upsert requires at least one --on column.")
 
         operations = self._planner.plan(
             source=source_path,
@@ -47,6 +52,7 @@ class MergeDatasets:
             out=output_path,
             inplace=inplace,
             on_columns=on_columns,
+            strategy=merge_strategy,
             ignore_filetype=ignore_filetype,
         )
 
@@ -59,6 +65,7 @@ class MergeDatasets:
         return self._executor.execute_all(
             prepared_operations,
             on_columns=on_columns,
+            strategy=merge_strategy,
             transaction_root=transaction_root,
         )
 
@@ -69,6 +76,7 @@ class MergeDatasets:
         out: Path | None,
         inplace: bool,
         on_columns: tuple[str, ...],
+        strategy: str,
         ignore_filetype: bool,
     ) -> tuple[list[str], bool]:
         source_path = resolve_merge_path(source, role="source")
@@ -77,6 +85,10 @@ class MergeDatasets:
 
         if inplace == (output_path is not None):
             raise ValueError("Provide exactly one of --out or --inplace.")
+
+        merge_strategy = self._resolve_strategy(strategy)
+        if merge_strategy == "upsert" and not on_columns:
+            raise ValueError("--strategy upsert requires at least one --on column.")
 
         operations = self._planner.plan(
             source=source_path,
@@ -90,5 +102,12 @@ class MergeDatasets:
             out=output_path,
             inplace=inplace,
             on_columns=on_columns,
+            strategy=merge_strategy,
             ignore_filetype=ignore_filetype,
         )
+
+    def _resolve_strategy(self, strategy: str) -> MergeStrategy:
+        lowered = strategy.lower()
+        if lowered in {"append", "upsert"}:
+            return lowered
+        raise ValueError(f"Unsupported merge strategy: {strategy}")

@@ -14,6 +14,7 @@ _BINARY_FILE_SUFFIXES = {".parquet", ".feather", ".arrow"}
 _CSV_SUFFIX = ".csv"
 _FEATHER_ARROW_SUFFIXES = {".feather", ".arrow"}
 MergeOperationKind = Literal["merge", "source_only", "target_passthrough"]
+MergeStrategy = Literal["append", "upsert"]
 
 
 @dataclass(frozen=True)

@@ -225,7 +225,7 @@ For file-vs-folder diffs, TabCaddy matches by filename across the folder tree:
 `merge`
 
 ```bash
-tabcaddy merge <source> <target> (--out <path> | --inplace) [--on COLUMN ...] [--ignore-filetype] [--dry]
+tabcaddy merge <source> <target> (--out <path> | --inplace) [--on COLUMN ...] [--strategy append|upsert] [--ignore-filetype] [--dry]
 ```
 
 Merge appends source rows onto matching target files and writes the result using the target file layout.
@@ -239,9 +239,9 @@ Important behavior:
 - compiled datasets are rejected explicitly because merge does not rebuild compiled metadata
 - matching inside folders is by relative path, not just filename
 - when `source` and `target` are both files, their file types must match unless `--ignore-filetype` is provided
-- exact duplicate rows are removed after appending
-- `--on` is optional; when provided, merge checks for conflicting duplicate keys after append-and-deduplicate
-- rows with the same key are not updated in place; merge is append plus validation, not an upsert
+- default `--strategy append` preserves target rows and appends only source rows that are not already present in target
+- `--strategy upsert` requires `--on`; matching target keys are replaced by source rows (source wins)
+- `--on` is optional for append; when provided, merge checks for conflicting duplicate keys after append
 
 How output paths work:
 
@@ -272,10 +272,20 @@ Use `--on` one or more times to define key columns for conflict detection:
 tabcaddy merge incoming/ archive/ --out merged_archive --on customer_id --on order_id
 ```
 
-`--on` is only used for conflict detection after the append-and-deduplicate step.
+Strategy examples:
 
-- if two rows share the same key and all non-key values are identical, they collapse to one row through normal exact-row deduplication
-- if two rows share the same key but differ in any non-key value, merge fails instead of silently choosing one
+```bash
+# Append mode (default): preserve target rows, add source rows not already present
+tabcaddy merge incoming/ archive/ --out merged_archive --strategy append
+
+# Upsert mode: replace matching target keys with source rows (source wins)
+tabcaddy merge incoming/ archive/ --out merged_archive --strategy upsert --on customer_id
+```
+
+Conflict behavior in append mode when `--on` is provided:
+
+- if two rows share the same key and differ in non-key values, merge fails instead of silently choosing one
+- key-only schemas are also checked: duplicate keys are treated as conflicts
 - with `--dry`, TabCaddy exits non-zero when the preview detects a blocking issue
 
 Preview a batch merge before writing:

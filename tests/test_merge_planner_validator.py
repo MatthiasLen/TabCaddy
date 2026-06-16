@@ -188,6 +188,7 @@ def test_planner_and_validator_prepare_realistic_synthetic_merge_plan(
         out=out_dir,
         inplace=False,
         on_columns=(),
+        strategy="append",
         ignore_filetype=False,
     )
 
@@ -258,6 +259,7 @@ def test_validator_rejects_duplicate_destinations(tmp_path: Path) -> None:
             out=tmp_path / "out",
             inplace=False,
             on_columns=(),
+            strategy="append",
             ignore_filetype=False,
         )
 
@@ -283,6 +285,7 @@ def test_validator_rejects_existing_output_when_not_inplace(tmp_path: Path) -> N
             out=destination,
             inplace=False,
             on_columns=(),
+            strategy="append",
             ignore_filetype=False,
         )
 
@@ -308,6 +311,7 @@ def test_validator_passthrough_operation_skips_schema_validation(
         out=tmp_path / "out",
         inplace=False,
         on_columns=("id",),
+        strategy="append",
         ignore_filetype=False,
     )
 
@@ -339,6 +343,7 @@ def test_validator_rejects_layout_mismatch_before_column_type_checks(
             out=tmp_path / "merged.csv",
             inplace=False,
             on_columns=("id",),
+            strategy="append",
             ignore_filetype=False,
         )
 
@@ -364,6 +369,7 @@ def test_validator_rejects_missing_merge_key_columns(tmp_path: Path) -> None:
             out=tmp_path / "merged.csv",
             inplace=False,
             on_columns=("id", "missing"),
+            strategy="append",
             ignore_filetype=False,
         )
 
@@ -391,6 +397,7 @@ def test_validator_rejects_incompatible_column_types_without_casting(
             out=tmp_path / "merged.csv",
             inplace=False,
             on_columns=("id",),
+            strategy="append",
             ignore_filetype=False,
         )
 
@@ -418,6 +425,7 @@ def test_validator_allows_csv_to_binary_cast_when_ignore_filetype_enabled(
         out=destination,
         inplace=False,
         on_columns=("id",),
+        strategy="append",
         ignore_filetype=True,
     )
 
@@ -428,3 +436,29 @@ def test_validator_allows_csv_to_binary_cast_when_ignore_filetype_enabled(
     assert prepared[0].validation.target_schema == pl.Schema(
         {"id": pl.Int64, "value": pl.Int64}
     )
+
+
+def test_validator_rejects_upsert_without_merge_key_columns(tmp_path: Path) -> None:
+    validator = MergeValidator()
+    source = tmp_path / "source.csv"
+    target = tmp_path / "target.csv"
+
+    _write_frame(source, [{"id": 1, "value": 10}])
+    _write_frame(target, [{"id": 2, "value": 20}])
+
+    with pytest.raises(ValueError, match="--strategy upsert requires"):
+        validator.prepare_operations(
+            operations=[
+                PlannedOperation(
+                    source=source,
+                    target=target,
+                    destination=tmp_path / "merged.csv",
+                    output_directory=False,
+                )
+            ],
+            out=tmp_path / "merged.csv",
+            inplace=False,
+            on_columns=(),
+            strategy="upsert",
+            ignore_filetype=False,
+        )

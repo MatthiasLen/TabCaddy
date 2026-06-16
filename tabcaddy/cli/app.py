@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 
 import typer
 
@@ -185,6 +186,7 @@ def head(
 @app.command(
     help=(
         "Merge files or folders with schema validation and conflict checks. "
+        "Use --strategy append (default) or --strategy upsert with --on keys. "
         "Compiled datasets are not supported."
     )
 )
@@ -206,6 +208,14 @@ def merge(
         "--on",
         help="One or more key columns used for conflict-aware key merges.",
     ),
+    strategy: Literal["append", "upsert"] = typer.Option(
+        "append",
+        "--strategy",
+        help=(
+            "Merge strategy. append keeps target rows and adds source rows not already "
+            "present. upsert requires --on and replaces matching target keys with source rows."
+        ),
+    ),
     ignore_filetype: bool = typer.Option(
         False,
         "--ignore-filetype",
@@ -219,25 +229,28 @@ def merge(
 ) -> None:
     console = create_console()
     merge_datasets = MergeDatasets()
+    written: list[Path] = []
 
     try:
         if dry:
             lines, has_issues = merge_datasets.preview(
-                source=source,
-                target=target,
-                out=out,
-                inplace=inplace,
-                on_columns=tuple(on or ()),
-                ignore_filetype=ignore_filetype,
+                source,
+                target,
+                out,
+                inplace,
+                tuple(on or ()),
+                strategy,
+                ignore_filetype,
             )
         else:
             written = merge_datasets.run(
-                source=source,
-                target=target,
-                out=out,
-                inplace=inplace,
-                on_columns=tuple(on or ()),
-                ignore_filetype=ignore_filetype,
+                source,
+                target,
+                out,
+                inplace,
+                tuple(on or ()),
+                strategy,
+                ignore_filetype,
             )
     except (FileExistsError, FileNotFoundError, ValueError) as error:
         console.print(f"[red]{error}[/red]")
