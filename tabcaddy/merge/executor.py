@@ -10,6 +10,7 @@ import polars as pl
 from tabcaddy.merge.common import (
     MergeStrategy,
     PreparedOperation,
+    align_lazyframe_to_schema,
     cast_lazyframe,
     scan_dataframe,
     stage_lazyframe,
@@ -105,6 +106,14 @@ class MergeExecutor:
             )
 
         target_frame = scan_dataframe(operation.target)
+        target_frame = align_lazyframe_to_schema(
+            target_frame,
+            operation.validation.effective_schema,
+        )
+        source_frame = align_lazyframe_to_schema(
+            source_frame,
+            operation.validation.effective_schema,
+        )
 
         if strategy == "append":
             merged = self._merge_append(target_frame, source_frame)

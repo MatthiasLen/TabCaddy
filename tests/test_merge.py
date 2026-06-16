@@ -148,6 +148,219 @@ def test_merge_upsert_replaces_rows_by_key_with_source_values(tmp_path: Path) ->
     ]
 
 
+def test_merge_schema_evolution_allow_additive_append_adds_source_columns(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source.csv"
+    target = tmp_path / "target.csv"
+    output = tmp_path / "merged.csv"
+
+    _write_frame(source, [{"id": 2, "value": 20, "extra": "x"}])
+    _write_frame(target, [{"id": 1, "value": 10}])
+
+    result = runner.invoke(
+        app,
+        [
+            "merge",
+            str(source),
+            str(target),
+            "--out",
+            str(output),
+            "--schema-evolution",
+            "allow-additive",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert _read_frame(output).to_dicts() == [
+        {"id": 1, "value": 10, "extra": None},
+        {"id": 2, "value": 20, "extra": "x"},
+    ]
+
+
+def test_merge_schema_evolution_allow_additive_append_preserves_target_columns(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source.csv"
+    target = tmp_path / "target.csv"
+    output = tmp_path / "merged.csv"
+
+    _write_frame(source, [{"id": 2, "value": 20}])
+    _write_frame(target, [{"id": 1, "value": 10, "category": "legacy"}])
+
+    result = runner.invoke(
+        app,
+        [
+            "merge",
+            str(source),
+            str(target),
+            "--out",
+            str(output),
+            "--schema-evolution",
+            "allow-additive",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert _read_frame(output).to_dicts() == [
+        {"id": 1, "value": 10, "category": "legacy"},
+        {"id": 2, "value": 20, "category": None},
+    ]
+
+
+def test_merge_schema_evolution_allow_additive_upsert_handles_expanded_schema(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source.csv"
+    target = tmp_path / "target.csv"
+    output = tmp_path / "merged.csv"
+
+    _write_frame(source, [{"id": 2, "value": 99, "status": "updated"}])
+    _write_frame(
+        target,
+        [
+            {"id": 1, "value": 10, "category": "legacy"},
+            {"id": 2, "value": 20, "category": "legacy"},
+        ],
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "merge",
+            str(source),
+            str(target),
+            "--out",
+            str(output),
+            "--strategy",
+            "upsert",
+            "--on",
+            "id",
+            "--schema-evolution",
+            "allow-additive",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert _read_frame(output).sort("id").to_dicts() == [
+        {"id": 1, "value": 10, "category": "legacy", "status": None},
+        {"id": 2, "value": 99, "category": None, "status": "updated"},
+    ]
+
+
+def test_merge_schema_evolution_strict_keeps_layout_mismatch_failure(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source.csv"
+    target = tmp_path / "target.csv"
+    output = tmp_path / "merged.csv"
+
+    _write_frame(source, [{"id": 2, "value": 20, "extra": "x"}])
+    _write_frame(target, [{"id": 1, "value": 10}])
+
+    result = runner.invoke(
+        app,
+        [
+            "merge",
+            str(source),
+            str(target),
+            "--out",
+            str(output),
+            "--schema-evolution",
+            "strict",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "column layouts differ" in result.stdout
+
+
+def test_merge_schema_evolution_allow_additive_rejects_dtype_conflicts(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source.csv"
+    target = tmp_path / "target.csv"
+    output = tmp_path / "merged.csv"
+
+    _write_frame(source, [{"id": 2, "value": "twenty", "extra": "x"}])
+    _write_frame(target, [{"id": 1, "value": 10}])
+
+    result = runner.invoke(
+        app,
+        [
+            "merge",
+            str(source),
+            str(target),
+            "--out",
+            str(output),
+            "--schema-evolution",
+            "allow-additive",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "incompatible types for value" in result.stdout
+    assert not output.exists()
+
+
+def test_merge_schema_evolution_allow_additive_rejects_ignore_filetype(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source.csv"
+    target = tmp_path / "target.parquet"
+    output = tmp_path / "merged.parquet"
+
+    _write_frame(source, [{"id": 2, "value": 20}])
+    _write_frame(target, [{"id": 1, "value": 10}])
+
+    result = runner.invoke(
+        app,
+        [
+            "merge",
+            str(source),
+            str(target),
+            "--out",
+            str(output),
+            "--ignore-filetype",
+            "--schema-evolution",
+            "allow-additive",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "not supported with --ignore-filetype" in result.stdout
+
+
+def test_merge_schema_evolution_allow_additive_dry_run_reports_marker(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source.csv"
+    target = tmp_path / "target.csv"
+    output = tmp_path / "merged.csv"
+
+    _write_frame(source, [{"id": 2, "value": 20, "extra": "x"}])
+    _write_frame(target, [{"id": 1, "value": 10}])
+
+    result = runner.invoke(
+        app,
+        [
+            "merge",
+            str(source),
+            str(target),
+            "--out",
+            str(output),
+            "--schema-evolution",
+            "allow-additive",
+            "--dry",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Dry-run merge plan" in result.stdout
+    assert "schema_evolution=allow-additive" in result.stdout
+    assert "added_columns=1" in result.stdout
+
+
 def test_merge_upsert_requires_key_columns(tmp_path: Path) -> None:
     source = tmp_path / "source.csv"
     target = tmp_path / "target.csv"

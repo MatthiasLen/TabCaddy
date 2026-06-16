@@ -216,6 +216,14 @@ def merge(
             "present. upsert requires --on and replaces matching target keys with source rows."
         ),
     ),
+    schema_evolution: Literal["strict", "allow-additive"] = typer.Option(
+        "strict",
+        "--schema-evolution",
+        help=(
+            "Schema policy. strict requires identical column layouts. "
+            "allow-additive keeps target columns and appends source-only columns."
+        ),
+    ),
     ignore_filetype: bool = typer.Option(
         False,
         "--ignore-filetype",
@@ -241,6 +249,7 @@ def merge(
                 tuple(on or ()),
                 strategy,
                 ignore_filetype,
+                schema_evolution,
             )
         else:
             written = merge_datasets.run(
@@ -251,6 +260,7 @@ def merge(
                 tuple(on or ()),
                 strategy,
                 ignore_filetype,
+                schema_evolution,
             )
     except (FileExistsError, FileNotFoundError, ValueError) as error:
         console.print(f"[red]{error}[/red]")
