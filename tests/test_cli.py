@@ -103,6 +103,34 @@ def test_transform_fails_cleanly_when_output_folder_exists(tmp_path: Path) -> No
     assert "Traceback" not in transform_result.stdout
 
 
+def test_transform_single_file_output_path_like_file_writes_file(
+    tmp_path: Path,
+) -> None:
+    input_file = tmp_path / "input.csv"
+    _write_csv(input_file, [{"id": 1, "value": 10.0}])
+
+    transform_script = tmp_path / "transform.py"
+    transform_script.write_text(
+        "import polars as pl\n\ndef transform(df, context=None):\n    return df\n",
+        encoding="utf-8",
+    )
+
+    output_file = tmp_path / "output.csv"
+    transform_result = runner.invoke(
+        app,
+        ["transform", str(input_file), str(transform_script), str(output_file)],
+    )
+
+    assert transform_result.exit_code == 0
+    assert output_file.is_file()
+    assert not output_file.is_dir()
+    assert not (tmp_path / "output.csv" / "input.csv").exists()
+
+    transformed = pl.read_csv(output_file)
+    assert transformed.height == 1
+    assert transformed["value"][0] == 10.0
+
+
 def test_compile_transform_scaffold_and_diff_commands(tmp_path: Path) -> None:
     left = tmp_path / "left"
     right = tmp_path / "right"

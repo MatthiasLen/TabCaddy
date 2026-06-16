@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from tabcaddy.application.generate_synthetic_test_assets import (
+from tabcaddy.test_support.synthetic_assets import (
     generate_synthetic_test_assets,
 )
 
