@@ -44,7 +44,12 @@ def summary(
     console = create_console()
     render = resolve_render_profile(console)
 
-    result = GenerateAnalysis().run(resolve_source(source), profile)
+    try:
+        result = GenerateAnalysis().run(resolve_source(source), profile)
+    except (FileNotFoundError, ValueError) as error:
+        console.print(f"[red]{error}[/red]")
+        raise typer.Exit(code=1) from error
+
     console.print(build_summary_view(result.analysis, render=render))
 
 
@@ -56,7 +61,12 @@ def schema(
     console = create_console()
     render = resolve_render_profile(console)
 
-    result = GenerateAnalysis().run(resolve_source(source), ProfileMode.QUICK)
+    try:
+        result = GenerateAnalysis().run(resolve_source(source), ProfileMode.QUICK)
+    except (FileNotFoundError, ValueError) as error:
+        console.print(f"[red]{error}[/red]")
+        raise typer.Exit(code=1) from error
+
     console.print(build_schema_view(result.analysis, result.files, render=render))
 
 
@@ -118,6 +128,9 @@ def transform(
             source, transform_path, output_path, workers
         )
     except (FileExistsError, FileNotFoundError, ValueError, TypeError) as error:
+        console.print(f"[red]{error}[/red]")
+        raise typer.Exit(code=1) from error
+    except Exception as error:
         console.print(f"[red]{error}[/red]")
         raise typer.Exit(code=1) from error
     console.print(f"Transformed files written to [green]{destination}[/green]")

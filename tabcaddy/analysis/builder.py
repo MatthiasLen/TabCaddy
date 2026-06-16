@@ -98,6 +98,10 @@ def _get_temporal_format(dtype: Any) -> str:
 
 
 def _format_histogram_bound(value: float) -> str:
+    if math.isnan(value):
+        return "nan"
+    if math.isinf(value):
+        return "inf" if value > 0 else "-inf"
     if math.isclose(value, round(value), rel_tol=1e-9, abs_tol=1e-9):
         return str(int(round(value)))
     return f"{value:.3g}"
@@ -327,8 +331,14 @@ class AnalysisBuilder:
         ]
         hash_digests = {name: sha256() for name, _ in hashable_columns}
         string_expressions = [
-            pl.col(name).cast(pl.String).fill_null("<NULL>").alias(name)
-            for name, _ in hashable_columns
+            (
+                pl.col(name).bin.encode("hex")
+                if "Binary" in str(dtype)
+                else pl.col(name).cast(pl.String)
+            )
+            .fill_null("<NULL>")
+            .alias(name)
+            for name, dtype in hashable_columns
         ]
         histogram_counts: dict[str, np.ndarray] = {}
         histogram_edges: dict[str, np.ndarray] = {}
@@ -342,6 +352,8 @@ class AnalysisBuilder:
                 continue
             lower = float(values[f"{prefix}_min"])
             upper = float(values[f"{prefix}_max"])
+            if not math.isfinite(lower) or not math.isfinite(upper):
+                continue
             if math.isclose(lower, upper, rel_tol=1e-9, abs_tol=1e-9):
                 histograms[name] = [(_format_histogram_bound(lower), non_null_count)]
                 continue
