@@ -4,23 +4,20 @@ from pathlib import Path
 
 import typer
 
-from tabcaddy.application.compile_dataset import CompileDataset
-from tabcaddy.application.diff_datasets import DiffDatasets
-from tabcaddy.application.generate_analysis import GenerateAnalysis
-from tabcaddy.application.head_dataset import HeadDataset
-from tabcaddy.application.merge import MergeDatasets
-from tabcaddy.application.scaffold_transform import ScaffoldTransform
-from tabcaddy.application.transform_dataset import TransformDataset
+from tabcaddy.analysis import AnalysisBuilder, GenerateAnalysis, resolve_source
+from tabcaddy.compilation import CompileDataset
+from tabcaddy.diff import DiffDatasets
 from tabcaddy.domain.models import DiffLevel
 from tabcaddy.domain.models import ProfileMode
-from tabcaddy.infrastructure.analysis_builder import AnalysisBuilder
-from tabcaddy.infrastructure.source_resolver import resolve_source
+from tabcaddy.merge import MergeDatasets
+from tabcaddy.preview import HeadDataset
 from tabcaddy.rendering.console import create_console
 from tabcaddy.rendering.console import resolve_render_profile
 from tabcaddy.rendering.views.diff import build_diff_view
 from tabcaddy.rendering.views.head import build_file_head_view, build_folder_head_view
 from tabcaddy.rendering.views.schema import build_schema_view
 from tabcaddy.rendering.views.summary import build_summary_view
+from tabcaddy.transforms import ScaffoldTransform, TransformDataset
 
 
 app = typer.Typer(
@@ -143,13 +140,16 @@ def diff(
     console = create_console()
     render = resolve_render_profile(console)
     generator = GenerateAnalysis()
+    try:
+        left = Path(left).expanduser().resolve()
+        right = Path(right).expanduser().resolve()
+        report = DiffDatasets(generator).run(
+            resolve_source(left), resolve_source(right), level
+        )
+    except (FileExistsError, FileNotFoundError, ValueError) as error:
+        console.print(f"[red]{error}[/red]")
+        raise typer.Exit(code=1) from error
 
-    left = Path(left).expanduser().resolve()
-    right = Path(right).expanduser().resolve()
-
-    report = DiffDatasets(generator).run(
-        resolve_source(left), resolve_source(right), level
-    )
     console.print(build_diff_view(report, level=level, render=render))
 
 
@@ -182,7 +182,12 @@ def head(
         )
 
 
-@app.command(help="Merge files or folders with schema validation and conflict checks")
+@app.command(
+    help=(
+        "Merge files or folders with schema validation and conflict checks. "
+        "Compiled datasets are not supported."
+    )
+)
 def merge(
     source: Path,
     target: Path,
@@ -206,29 +211,54 @@ def merge(
         "--ignore-filetype",
         help="Allow folder matching across CSV, Parquet, Feather, and Arrow extensions.",
     ),
+    dry: bool = typer.Option(
+        False,
+        "--dry",
+        help="Preview the merge plan without writing any files.",
+    ),
 ) -> None:
     console = create_console()
+    merge_datasets = MergeDatasets()
 
     try:
-        written = MergeDatasets().run(
-            source=source,
-            target=target,
-            out=out,
-            inplace=inplace,
-            on_columns=tuple(on or ()),
-            ignore_filetype=ignore_filetype,
-        )
+        if dry:
+            lines, has_issues = merge_datasets.preview(
+                source=source,
+                target=target,
+                out=out,
+                inplace=inplace,
+                on_columns=tuple(on or ()),
+                ignore_filetype=ignore_filetype,
+            )
+        else:
+            written = merge_datasets.run(
+                source=source,
+                target=target,
+                out=out,
+                inplace=inplace,
+                on_columns=tuple(on or ()),
+                ignore_filetype=ignore_filetype,
+            )
     except (FileExistsError, FileNotFoundError, ValueError) as error:
         console.print(f"[red]{error}[/red]")
         raise typer.Exit(code=1) from error
+
+    if dry:
+        console.print("Dry-run merge plan")
+        for line in lines:
+            console.print(line)
+        if has_issues:
+            raise typer.Exit(code=1)
+        return
 
     if len(written) == 1:
         console.print(f"Merged dataset written to [green]{written[0]}[/green]")
         return
 
-    console.print(
-        f"Merged {len(written)} files into [green]{written[0].parent}[/green]"
+    output_root = (
+        out.expanduser().resolve() if out is not None else target.expanduser().resolve()
     )
+    console.print(f"Merged {len(written)} files into [green]{output_root}[/green]")
 
 
 def main() -> None:

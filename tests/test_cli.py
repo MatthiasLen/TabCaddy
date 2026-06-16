@@ -118,7 +118,10 @@ def test_compile_transform_scaffold_and_diff_commands(tmp_path: Path) -> None:
 
     diff_result = runner.invoke(app, ["diff", str(left), str(right), "--level", "full"])
     assert diff_result.exit_code == 0
+    assert "Summary" in diff_result.stdout
     assert "Statistics Changes" in diff_result.stdout
+    assert "File Changes" in diff_result.stdout
+    assert "Dataset Metadata" in diff_result.stdout
 
 
 def test_compile_accepts_parquet_inputs(tmp_path: Path) -> None:
@@ -155,6 +158,27 @@ def test_diff_metadata_level_hides_schema_and_statistics_sections(
     )
 
     assert diff_result.exit_code == 0
-    assert "Metadata Changes" in diff_result.stdout
+    assert "File Changes" in diff_result.stdout
+    assert "Dataset Metadata" not in diff_result.stdout
     assert "Schema Changes" not in diff_result.stdout
     assert "Statistics Changes" not in diff_result.stdout
+
+
+def test_diff_command_returns_friendly_error_for_unsupported_combination(
+    tmp_path: Path,
+) -> None:
+    folder = tmp_path / "folder"
+    compiled = tmp_path / "compiled"
+    folder.mkdir()
+    compiled.mkdir()
+    (compiled / "data").mkdir()
+    _write_csv(folder / "a.csv", [{"id": 1, "value": 10.0}])
+    (compiled / "metadata.json").write_text(
+        '{"metadata": {"version": 1, "created_at": "2024-01-01T00:00:00+00:00", "row_count": 0, "column_count": 0, "source_file_count": 0, "schema_hash": null, "column_hashes": null}, "schemas": [], "statistics": null, "warnings": [], "compiled": {"source": "x", "written_parts": []}}',
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, ["diff", str(folder), str(compiled)])
+
+    assert result.exit_code == 1
+    assert "Unsupported diff source combination" in result.stdout

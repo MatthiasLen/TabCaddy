@@ -8,10 +8,15 @@ from tabcaddy.domain.models import ColumnStatistics
 from tabcaddy.domain.models import DatasetAnalysis
 from tabcaddy.domain.models import DatasetMetadata
 from tabcaddy.domain.models import DatasetStatistics
+from tabcaddy.domain.models import DiffComparisonType
+from tabcaddy.domain.models import DiffLevel
+from tabcaddy.domain.models import DiffReport
+from tabcaddy.domain.models import DiffSummary
 from tabcaddy.domain.models import SchemaSignature
-from tabcaddy.infrastructure.schema_analyzer import FileSchemaRecord
+from tabcaddy.analysis.schema import FileSchemaRecord
 from tabcaddy.rendering.console import create_console
 from tabcaddy.rendering.console import RenderProfile
+from tabcaddy.rendering.views.diff import build_diff_view
 from tabcaddy.rendering.views.schema import build_schema_view
 from tabcaddy.rendering.views.summary import build_summary_view
 
@@ -104,3 +109,45 @@ def test_schema_render_ascii_fallback_is_cp1252_safe() -> None:
     output.encode("cp1252")
     assert "#" in output
     assert "█" not in output
+
+
+def test_diff_render_uses_compact_empty_state_and_hides_empty_sections() -> None:
+    report = DiffReport(
+        file_changes=[],
+        metadata_changes=[],
+        schema_changes=[],
+        statistics_changes=[],
+        warnings=[],
+        summary=DiffSummary(
+            comparison_type=DiffComparisonType.COMPILED,
+            content_status="identical",
+        ),
+    )
+    console = create_console(record=True, width=100, legacy_windows=False)
+    console.print(build_diff_view(report, level=DiffLevel.FULL))
+    output = console.export_text()
+
+    assert "No differences detected." in output
+    assert "File Changes" not in output
+    assert "Dataset Metadata" not in output
+
+
+def test_diff_render_shows_match_candidates() -> None:
+    report = DiffReport(
+        file_changes=[],
+        metadata_changes=[],
+        schema_changes=[],
+        statistics_changes=[],
+        warnings=[],
+        summary=DiffSummary(
+            comparison_type=DiffComparisonType.FILE_FOLDER,
+            match_status="ambiguous",
+            candidate_paths=["data.csv", "nested/data.csv"],
+        ),
+    )
+    console = create_console(record=True, width=100, legacy_windows=False)
+    console.print(build_diff_view(report, level=DiffLevel.FULL))
+    output = console.export_text()
+
+    assert "Match Candidates" in output
+    assert "nested/data.csv" in output

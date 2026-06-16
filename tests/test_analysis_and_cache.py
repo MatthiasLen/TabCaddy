@@ -6,11 +6,14 @@ from pathlib import Path
 import pytest
 import polars as pl
 
-from tabcaddy.application.generate_analysis import GenerateAnalysis
+from tabcaddy.analysis import (
+    AnalysisBuilder,
+    CacheManager,
+    GenerateAnalysis,
+    resolve_source,
+)
 from tabcaddy.domain.models import ProfileMode
-from tabcaddy.infrastructure.analysis_builder import AnalysisBuilder
-from tabcaddy.infrastructure.cache_manager import CacheManager
-from tabcaddy.infrastructure.source_resolver import resolve_source
+from tabcaddy.shared.dataset_io import read_compiled_analysis
 
 
 def test_analysis_builder_computes_metadata_and_statistics(homogeneous_folder) -> None:
@@ -119,3 +122,26 @@ def test_generate_analysis_invalidates_stale_cache_payload(
     assert cache_file.exists()
     payload = json.loads(cache_file.read_text(encoding="utf-8"))
     assert payload["format_version"] == CacheManager.CACHE_FORMAT_VERSION
+
+
+def test_read_compiled_analysis_returns_none_for_malformed_metadata(
+    tmp_path: Path,
+) -> None:
+    compiled = tmp_path / "compiled"
+    compiled.mkdir()
+    (compiled / "metadata.json").write_text("{not-json", encoding="utf-8")
+
+    assert read_compiled_analysis(compiled) is None
+
+
+def test_read_compiled_analysis_returns_none_for_invalid_payload_shape(
+    tmp_path: Path,
+) -> None:
+    compiled = tmp_path / "compiled"
+    compiled.mkdir()
+    (compiled / "metadata.json").write_text(
+        json.dumps({"warnings": []}),
+        encoding="utf-8",
+    )
+
+    assert read_compiled_analysis(compiled) is None

@@ -3,8 +3,8 @@ from __future__ import annotations
 from rich.console import Group
 
 from tabcaddy.domain.models import DatasetAnalysis
-from tabcaddy.infrastructure.schema_analyzer import FileSchemaRecord
-from tabcaddy.infrastructure.schema_analyzer import schema_type_changes
+from tabcaddy.analysis.schema import FileSchemaRecord
+from tabcaddy.analysis.schema import schema_type_changes
 from tabcaddy.rendering.charts.bar_chart import render_bar_chart
 from tabcaddy.rendering.console import RenderProfile
 from tabcaddy.rendering.console import resolve_render_profile

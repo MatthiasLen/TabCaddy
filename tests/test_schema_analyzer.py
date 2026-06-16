@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 from tabcaddy.domain.models import ColumnDefinition
-from tabcaddy.infrastructure.schema_analyzer import SchemaAnalyzer
-from tabcaddy.infrastructure.schema_analyzer import hash_schema
-from tabcaddy.infrastructure.source_resolver import resolve_source
+from tabcaddy.analysis import SchemaAnalyzer, hash_schema, resolve_source
 
 
 def test_hash_schema_is_deterministic() -> None:

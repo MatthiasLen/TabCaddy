@@ -25,6 +25,26 @@ class DiffLevel(str, Enum):
     FULL = "full"
 
 
+class DiffComparisonType(str, Enum):
+    FILE = "file_vs_file"
+    FILE_FOLDER = "file_vs_folder"
+    FOLDER = "folder_vs_folder"
+    COMPILED = "compiled_vs_compiled"
+
+
+@dataclass(frozen=True)
+class DiffSummary:
+    comparison_type: DiffComparisonType
+    content_status: str | None = None
+    match_status: str | None = None
+    matched_path: str | None = None
+    candidate_paths: list[str] = field(default_factory=list)
+    matching_files: int | None = None
+    modified_files: int | None = None
+    only_in_left: int | None = None
+    only_in_right: int | None = None
+
+
 @dataclass(frozen=True)
 class DatasetSource:
     path: Path
@@ -83,7 +103,9 @@ class DatasetAnalysis:
 
 @dataclass
 class DiffReport:
-    metadata_changes: list[str]
-    schema_changes: list[str]
-    statistics_changes: list[str]
+    file_changes: list[str] = field(default_factory=list)
+    metadata_changes: list[str] = field(default_factory=list)
+    schema_changes: list[str] = field(default_factory=list)
+    statistics_changes: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    summary: DiffSummary | None = None
