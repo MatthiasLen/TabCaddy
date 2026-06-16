@@ -166,10 +166,15 @@ def head(
     ),
     show_meta: bool = typer.Option(False, "--showmeta", help="Show metadata columns"),
 ) -> None:
-    source = Path(source).expanduser().resolve()
     console = create_console()
     render = resolve_render_profile(console)
-    result = HeadDataset().run(resolve_source(source), n)
+    try:
+        source = Path(source).expanduser().resolve()
+        result = HeadDataset().run(resolve_source(source), n)
+    except (FileNotFoundError, ValueError) as error:
+        console.print(f"[red]{error}[/red]")
+        raise typer.Exit(code=1) from error
+
     if result.is_folder:
         console.print(
             build_folder_head_view(

@@ -169,7 +169,12 @@ class MergeExecutor:
         source_keys = source_deduplicated.select(key_columns).unique(
             maintain_order=True
         )
-        target_retained = target_frame.join(source_keys, on=key_columns, how="anti")
+        target_retained = target_frame.join(
+            source_keys,
+            on=key_columns,
+            how="anti",
+            nulls_equal=True,
+        )
         return pl.concat([target_retained, source_deduplicated], how="vertical")
 
     def _staged_path(

@@ -85,6 +85,35 @@ def test_compile_interactive_schema_selection_uses_one_based_index(
     assert "Skipped 1 files from non-selected schemas." in result.stdout
 
 
+def test_compile_rejects_zero_schema_index(tmp_path: Path, drift_folder) -> None:
+    compiled = tmp_path / "compiled_schema_zero"
+
+    result = runner.invoke(
+        app,
+        ["compile", str(drift_folder), "--schema", "0", "--output", str(compiled)],
+    )
+
+    assert result.exit_code == 1
+    assert "Schema index must be between 1 and 2" in result.stdout
+    assert not compiled.exists()
+
+
+def test_compile_interactive_rejects_zero_schema_index(
+    tmp_path: Path, drift_folder
+) -> None:
+    compiled = tmp_path / "compiled_interactive_zero"
+
+    result = runner.invoke(
+        app,
+        ["compile", str(drift_folder), "--interactive", "--output", str(compiled)],
+        input="0\n",
+    )
+
+    assert result.exit_code == 1
+    assert "Schema index must be between 1 and 2" in result.stdout
+    assert not compiled.exists()
+
+
 def test_compile_without_schema_reports_validation_error_without_traceback(
     tmp_path: Path, drift_folder
 ) -> None:

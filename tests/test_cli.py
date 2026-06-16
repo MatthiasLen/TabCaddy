@@ -143,6 +143,48 @@ def test_compile_accepts_parquet_inputs(tmp_path: Path) -> None:
     assert any((tmp_path / "compiled" / "data").glob("*.parquet"))
 
 
+def test_head_accepts_parquet_file_and_folder_inputs(tmp_path: Path) -> None:
+    parquet_file = tmp_path / "single.parquet"
+    pl.DataFrame([{"id": 1, "value": 10.0}, {"id": 2, "value": 11.0}]).write_parquet(
+        parquet_file
+    )
+
+    file_result = runner.invoke(app, ["head", str(parquet_file), "--n", "1"])
+    assert file_result.exit_code == 0
+    assert "id" in file_result.stdout
+    assert "value" in file_result.stdout
+
+    folder = tmp_path / "parquet_folder"
+    folder.mkdir()
+    pl.DataFrame([{"id": 10, "value": 100.0}]).write_parquet(folder / "a.parquet")
+    pl.DataFrame([{"id": 20, "value": 200.0}]).write_parquet(folder / "b.parquet")
+
+    folder_result = runner.invoke(app, ["head", str(folder), "--n", "2"])
+    assert folder_result.exit_code == 0
+    assert "a.parquet" in folder_result.stdout
+    assert "b.parquet" in folder_result.stdout
+
+
+def test_head_rejects_negative_n_for_file_and_folder(tmp_path: Path) -> None:
+    csv_file = tmp_path / "single.csv"
+    _write_csv(csv_file, [{"id": 1, "value": 10.0}])
+
+    file_result = runner.invoke(app, ["head", str(csv_file), "--n", "-1"])
+    assert file_result.exit_code == 1
+    assert "--n must be greater than or equal to 0" in file_result.stdout
+    assert "Traceback" not in file_result.stdout
+
+    folder = tmp_path / "csv_folder"
+    folder.mkdir()
+    _write_csv(folder / "a.csv", [{"id": 1, "value": 10.0}])
+    _write_csv(folder / "b.csv", [{"id": 2, "value": 20.0}])
+
+    folder_result = runner.invoke(app, ["head", str(folder), "--n", "-1"])
+    assert folder_result.exit_code == 1
+    assert "--n must be greater than or equal to 0" in folder_result.stdout
+    assert "Traceback" not in folder_result.stdout
+
+
 def test_diff_metadata_level_hides_schema_and_statistics_sections(
     tmp_path: Path,
 ) -> None:
