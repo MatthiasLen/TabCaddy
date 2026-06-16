@@ -42,50 +42,50 @@ def build_sample_data(workflow_root: Path) -> tuple[Path, Path]:
         raw_batch,
         {
             "service/orders_2026_01.csv": [
-            {
-                "order_id": 1001,
-                "customer_id": "C-001",
-                "event_date": "2026-01-03",
-                "units": 2,
-                "unit_price": 120.0,
-                "channel": "online",
-            },
-            {
-                "order_id": 1002,
-                "customer_id": "C-002",
-                "event_date": "2026-01-07",
-                "units": 1,
-                "unit_price": 430.0,
-                "channel": "partner",
-            },
-            {
-                "order_id": 1003,
-                "customer_id": "C-003",
-                "event_date": "2026-01-10",
-                "units": 3,
-                "unit_price": 80.0,
-                "channel": "online",
-            },
+                {
+                    "order_id": 1001,
+                    "customer_id": "C-001",
+                    "event_date": "2026-01-03",
+                    "units": 2,
+                    "unit_price": 120.0,
+                    "channel": "online",
+                },
+                {
+                    "order_id": 1002,
+                    "customer_id": "C-002",
+                    "event_date": "2026-01-07",
+                    "units": 1,
+                    "unit_price": 430.0,
+                    "channel": "partner",
+                },
+                {
+                    "order_id": 1003,
+                    "customer_id": "C-003",
+                    "event_date": "2026-01-10",
+                    "units": 3,
+                    "unit_price": 80.0,
+                    "channel": "online",
+                },
             ],
             "service/orders_2026_02.csv": [
-            {
-                "order_id": 2001,
-                "customer_id": "C-003",
-                "event_date": "2026-02-02",
-                "units": 2,
-                "unit_price": 95.0,
-                "channel": "online",
-                "discount_pct": 0.05,
-            },
-            {
-                "order_id": 2002,
-                "customer_id": "C-004",
-                "event_date": "2026-02-08",
-                "units": 1,
-                "unit_price": 210.0,
-                "channel": "field",
-                "discount_pct": 0.10,
-            },
+                {
+                    "order_id": 2001,
+                    "customer_id": "C-003",
+                    "event_date": "2026-02-02",
+                    "units": 2,
+                    "unit_price": 95.0,
+                    "channel": "online",
+                    "discount_pct": 0.05,
+                },
+                {
+                    "order_id": 2002,
+                    "customer_id": "C-004",
+                    "event_date": "2026-02-08",
+                    "units": 1,
+                    "unit_price": 210.0,
+                    "channel": "field",
+                    "discount_pct": 0.10,
+                },
             ],
         },
     )
@@ -95,42 +95,42 @@ def build_sample_data(workflow_root: Path) -> tuple[Path, Path]:
         incoming_batch,
         {
             "service/orders_2026_01.csv": [
-            {
-                "order_id": 1002,
-                "customer_id": "C-002",
-                "event_date": "2026-01-07",
-                "units": 2,
-                "unit_price": 430.0,
-                "channel": "partner",
-            },
-            {
-                "order_id": 1004,
-                "customer_id": "C-005",
-                "event_date": "2026-01-15",
-                "units": 1,
-                "unit_price": 500.0,
-                "channel": "online",
-            },
+                {
+                    "order_id": 1002,
+                    "customer_id": "C-002",
+                    "event_date": "2026-01-07",
+                    "units": 2,
+                    "unit_price": 430.0,
+                    "channel": "partner",
+                },
+                {
+                    "order_id": 1004,
+                    "customer_id": "C-005",
+                    "event_date": "2026-01-15",
+                    "units": 1,
+                    "unit_price": 500.0,
+                    "channel": "online",
+                },
             ],
             "service/orders_2026_02.csv": [
-            {
-                "order_id": 2001,
-                "customer_id": "C-003",
-                "event_date": "2026-02-02",
-                "units": 2,
-                "unit_price": 95.0,
-                "channel": "online",
-                "discount_pct": 0.15,
-            },
-            {
-                "order_id": 2003,
-                "customer_id": "C-006",
-                "event_date": "2026-02-11",
-                "units": 5,
-                "unit_price": 70.0,
-                "channel": "partner",
-                "discount_pct": 0.00,
-            },
+                {
+                    "order_id": 2001,
+                    "customer_id": "C-003",
+                    "event_date": "2026-02-02",
+                    "units": 2,
+                    "unit_price": 95.0,
+                    "channel": "online",
+                    "discount_pct": 0.15,
+                },
+                {
+                    "order_id": 2003,
+                    "customer_id": "C-006",
+                    "event_date": "2026-02-11",
+                    "units": 5,
+                    "unit_price": 70.0,
+                    "channel": "partner",
+                    "discount_pct": 0.00,
+                },
             ],
         },
     )
@@ -162,8 +162,8 @@ def main() -> None:
         shutil.rmtree(workflow_root)
         workflow_root.mkdir(parents=True, exist_ok=True)
 
-    tabcaddy_cmd = [sys.executable, "-m", "tabcaddy"]     
-    
+    tabcaddy_cmd = [sys.executable, "-m", "tabcaddy"]
+
     # 1) & 2) Create the initial raw and incoming batch of CSV files to simulate a real-world data ingest scenario.
     raw_batch, incoming_batch = build_sample_data(workflow_root)
 
@@ -179,7 +179,11 @@ def main() -> None:
     transform_script = workflow_root / "transform_orders.py"
 
     # 6) Scaffold a transform template so the workflow starts from TabCaddy's generated contract.
-    tc(tabcaddy_cmd, ["scaffold-transform", str(raw_batch), "--output", str(transform_script)], repo_root)
+    tc(
+        tabcaddy_cmd,
+        ["scaffold-transform", str(raw_batch), "--output", str(transform_script)],
+        repo_root,
+    )
 
     # 7) Replace the scaffold with a realistic transform that standardizes names and computes features.
     transform_script.write_text(
@@ -213,20 +217,41 @@ def transform(df: pl.DataFrame, context=None) -> pl.DataFrame:
     incoming_cleaned = workflow_root / "incoming_cleaned"
 
     # 8) Apply the transform to the initial raw folder to create the curated dataset candidate.
-    tc(tabcaddy_cmd, ["transform", str(raw_batch), str(transform_script), str(cleaned_batch)], repo_root)
+    tc(
+        tabcaddy_cmd,
+        ["transform", str(raw_batch), str(transform_script), str(cleaned_batch)],
+        repo_root,
+    )
 
     # 9) Compile curated files into a reusable TabCaddy compiled dataset for downstream tasks.
     compiled_initial = workflow_root / "compiled_initial"
-    tc(tabcaddy_cmd, ["compile", str(cleaned_batch), "--output", str(compiled_initial)], repo_root)
+    tc(
+        tabcaddy_cmd,
+        ["compile", str(cleaned_batch), "--output", str(compiled_initial)],
+        repo_root,
+    )
 
     # 10) Inspect compiled rows to validate the curated output produced from the compile stage.
     tc(tabcaddy_cmd, ["head", str(compiled_initial), "--n", "5"], repo_root)
 
     # 11) Transform the incoming batch with the same business logic to keep processing consistent.
-    tc(tabcaddy_cmd, ["transform", str(incoming_batch), str(transform_script), str(incoming_cleaned)], repo_root)
+    tc(
+        tabcaddy_cmd,
+        [
+            "transform",
+            str(incoming_batch),
+            str(transform_script),
+            str(incoming_cleaned),
+        ],
+        repo_root,
+    )
 
     # 12) Diff curated baseline vs curated incoming at full depth to review what changed.
-    tc(tabcaddy_cmd, ["diff", str(cleaned_batch), str(incoming_cleaned), "--level", "full"], repo_root)
+    tc(
+        tabcaddy_cmd,
+        ["diff", str(cleaned_batch), str(incoming_cleaned), "--level", "full"],
+        repo_root,
+    )
 
     # 13) Run a dry merge plan first to preview matches, conflicts, and schema behavior safely.
     merged_folder = workflow_root / "merged_archive"
@@ -250,10 +275,18 @@ def transform(df: pl.DataFrame, context=None) -> pl.DataFrame:
 
     # 15) Compile the merged archive to publish a new reusable dataset version.
     compiled_merged = workflow_root / "compiled_merged"
-    tc(tabcaddy_cmd, ["compile", str(merged_folder), "--output", str(compiled_merged)], repo_root)
+    tc(
+        tabcaddy_cmd,
+        ["compile", str(merged_folder), "--output", str(compiled_merged)],
+        repo_root,
+    )
 
     # 16) Diff old vs new compiled datasets to quantify impact of the incoming release.
-    tc(tabcaddy_cmd, ["diff", str(compiled_initial), str(compiled_merged), "--level", "full"], repo_root)
+    tc(
+        tabcaddy_cmd,
+        ["diff", str(compiled_initial), str(compiled_merged), "--level", "full"],
+        repo_root,
+    )
 
     # 17) Produce a final deep summary for reporting and handoff to analytics stakeholders.
     tc(tabcaddy_cmd, ["summary", str(compiled_merged), "--profile", "deep"], repo_root)
