@@ -6,6 +6,7 @@ import polars as pl
 
 from tabcaddy.analysis.sources import SUPPORTED_FILE_SUFFIXES
 from tabcaddy.merge.common import (
+    MergeStrategy,
     PlannedOperation,
     PreparedOperation,
     ValidationResult,
@@ -30,6 +31,7 @@ class MergeValidator:
         out: Path | None,
         inplace: bool,
         on_columns: tuple[str, ...],
+        strategy: MergeStrategy,
         ignore_filetype: bool,
     ) -> list[PreparedOperation]:
         if not operations:
@@ -44,7 +46,12 @@ class MergeValidator:
         for operation in operations:
             self._validate_destination(operation.destination, destinations, inplace)
             prepared_operations.append(
-                self._prepare_operation(operation, on_columns, ignore_filetype)
+                self._prepare_operation(
+                    operation,
+                    on_columns,
+                    strategy,
+                    ignore_filetype,
+                )
             )
         return prepared_operations
 
@@ -54,6 +61,7 @@ class MergeValidator:
         out: Path | None,
         inplace: bool,
         on_columns: tuple[str, ...],
+        strategy: MergeStrategy,
         ignore_filetype: bool,
     ) -> tuple[list[str], bool]:
         if not operations:
@@ -76,11 +84,12 @@ class MergeValidator:
                 issue = self._preview_operation_issue(
                     operation=operation,
                     on_columns=on_columns,
+                    strategy=strategy,
                     ignore_filetype=ignore_filetype,
                 )
             if issue is not None:
                 has_issues = True
-            lines.append(self._preview_line(operation, issue))
+            lines.append(self._preview_line(operation, issue, strategy, on_columns))
         return lines, has_issues
 
     def _validate_destination(
@@ -100,6 +109,7 @@ class MergeValidator:
         self,
         operation: PlannedOperation,
         on_columns: tuple[str, ...],
+        strategy: MergeStrategy,
         ignore_filetype: bool,
     ) -> PreparedOperation:
         if operation.target is None:
@@ -113,6 +123,7 @@ class MergeValidator:
             source=operation.source,
             target=operation.target,
             on_columns=on_columns,
+            strategy=strategy,
             ignore_filetype=ignore_filetype,
         )
         if validation.conflicting_columns:
@@ -151,6 +162,7 @@ class MergeValidator:
         self,
         operation: PlannedOperation,
         on_columns: tuple[str, ...],
+        strategy: MergeStrategy,
         ignore_filetype: bool,
     ) -> str | None:
         if operation.kind != "merge" or operation.target is None:
@@ -161,6 +173,7 @@ class MergeValidator:
                 source=operation.source,
                 target=operation.target,
                 on_columns=on_columns,
+                strategy=strategy,
                 ignore_filetype=ignore_filetype,
             )
         except ValueError as error:
@@ -183,14 +196,14 @@ class MergeValidator:
             except ValueError as error:
                 return str(error)
 
-        if not on_columns:
+        if not on_columns or strategy != "append":
             return None
 
         conflict = self._conflict_detector.find_conflicting_key(
-            frame=pl.concat(
-                [scan_dataframe(operation.target), source_frame],
-                how="vertical",
-            ).unique(maintain_order=True),
+            frame=self._build_append_preview_frame(
+                target_frame=scan_dataframe(operation.target),
+                source_frame=source_frame,
+            ),
             key_columns=on_columns,
         )
         if conflict is None:
@@ -217,7 +230,13 @@ class MergeValidator:
             raise ValueError(str(error)) from error
         return cast_frame
 
-    def _preview_line(self, operation: PlannedOperation, issue: str | None) -> str:
+    def _preview_line(
+        self,
+        operation: PlannedOperation,
+        issue: str | None,
+        strategy: MergeStrategy,
+        on_columns: tuple[str, ...],
+    ) -> str:
         parts = [operation.kind.upper()]
         if operation.kind == "target_passthrough":
             parts.append(f"target={operation.source}")
@@ -234,15 +253,88 @@ class MergeValidator:
             parts.append(
                 f"cast={operation.source.suffix.lower()}->{operation.target.suffix.lower()}"
             )
+        if operation.kind == "merge":
+            parts.append(f"strategy={strategy}")
+            summary = self._preview_merge_summary(operation, strategy, on_columns)
+            if summary is not None:
+                parts.append(summary)
         if issue is not None:
             parts.append(f"issue={issue}")
         return " ".join(parts)
+
+    def _preview_merge_summary(
+        self,
+        operation: PlannedOperation,
+        strategy: MergeStrategy,
+        on_columns: tuple[str, ...],
+    ) -> str | None:
+        if operation.target is None:
+            return None
+
+        try:
+            target_frame = scan_dataframe(operation.target)
+            source_frame = scan_dataframe(operation.source)
+            schema_names = target_frame.collect_schema().names()
+
+            if strategy == "append":
+                if not schema_names:
+                    return None
+                target_unique = target_frame.unique(
+                    subset=schema_names,
+                    maintain_order=True,
+                )
+                inserts = (
+                    source_frame.join(target_unique, on=schema_names, how="anti")
+                    .select(pl.len().alias("rows"))
+                    .collect(engine="streaming")
+                    .item()
+                )
+                return f"insert_rows={inserts}"
+
+            if not on_columns:
+                return None
+            key_columns = list(on_columns)
+            upsert_keys = source_frame.select(key_columns).unique(maintain_order=True)
+            replaced = (
+                target_frame.join(upsert_keys, on=key_columns, how="semi")
+                .select(pl.len().alias("rows"))
+                .collect(engine="streaming")
+                .item()
+            )
+            inserted = (
+                upsert_keys.join(
+                    target_frame.select(key_columns).unique(maintain_order=True),
+                    on=key_columns,
+                    how="anti",
+                )
+                .select(pl.len().alias("rows"))
+                .collect(engine="streaming")
+                .item()
+            )
+            return f"insert_rows={inserted} replace_rows={replaced}"
+        except pl.exceptions.PolarsError:
+            return None
+
+    def _build_append_preview_frame(
+        self,
+        target_frame: pl.LazyFrame,
+        source_frame: pl.LazyFrame,
+    ) -> pl.LazyFrame:
+        columns = target_frame.collect_schema().names()
+        if not columns:
+            return pl.concat([target_frame, source_frame], how="vertical")
+
+        source_additions = source_frame.join(
+            target_frame, on=columns, how="anti", nulls_equal=True
+        ).unique(subset=columns, maintain_order=True)
+        return pl.concat([target_frame, source_additions], how="vertical")
 
     def _validate_merge_pair(
         self,
         source: Path,
         target: Path,
         on_columns: tuple[str, ...],
+        strategy: MergeStrategy,
         ignore_filetype: bool,
     ) -> ValidationResult:
         source_schema = scan_dataframe(source).collect_schema()
@@ -257,6 +349,8 @@ class MergeValidator:
         if missing_keys:
             missing = ", ".join(missing_keys)
             raise ValueError(f"Merge key columns not found in both files: {missing}")
+        if strategy == "upsert" and not on_columns:
+            raise ValueError("--strategy upsert requires at least one --on column.")
 
         cast_source = (
             ignore_filetype

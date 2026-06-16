@@ -8,6 +8,7 @@ from pathlib import Path
 import polars as pl
 
 from tabcaddy.merge.common import (
+    MergeStrategy,
     PreparedOperation,
     cast_lazyframe,
     scan_dataframe,
@@ -34,6 +35,7 @@ class MergeExecutor:
         self,
         operations: list[PreparedOperation],
         on_columns: tuple[str, ...],
+        strategy: MergeStrategy,
         transaction_root: Path | None,
     ) -> list[Path]:
         staged_writes: list[StagedWrite] = []
@@ -45,6 +47,7 @@ class MergeExecutor:
                     self._stage_operation(
                         operation,
                         on_columns=on_columns,
+                        strategy=strategy,
                         transaction_root=transaction_root,
                         temp_root=temp_root,
                     )
@@ -71,6 +74,7 @@ class MergeExecutor:
         self,
         operation: PreparedOperation,
         on_columns: tuple[str, ...],
+        strategy: MergeStrategy,
         transaction_root: Path | None,
         temp_root: Path | None,
     ) -> StagedWrite:
@@ -100,25 +104,62 @@ class MergeExecutor:
                 operation.validation.target_schema,
             )
 
-        deduplicated = pl.concat(
-            [scan_dataframe(operation.target), source_frame],
-            how="vertical",
-        ).unique(maintain_order=True)
+        target_frame = scan_dataframe(operation.target)
 
-        if on_columns:
+        if strategy == "append":
+            merged = self._merge_append(target_frame, source_frame)
+        else:
+            merged = self._merge_upsert(target_frame, source_frame, on_columns)
+
+        if strategy == "append" and on_columns:
             self._conflict_detector.raise_on_conflicting_keys(
-                frame=deduplicated,
+                frame=merged,
                 key_columns=on_columns,
                 source=operation.source,
                 target=operation.target,
             )
 
         stage_lazyframe(
-            lazy_frame=deduplicated,
+            lazy_frame=merged,
             destination=staged_path,
             format_hint=operation.destination,
         )
         return StagedWrite(destination=operation.destination, staged_path=staged_path)
+
+    def _merge_append(
+        self,
+        target_frame: pl.LazyFrame,
+        source_frame: pl.LazyFrame,
+    ) -> pl.LazyFrame:
+        schema_names = target_frame.collect_schema().names()
+        if not schema_names:
+            return pl.concat([target_frame, source_frame], how="vertical")
+
+        source_additions = source_frame.join(
+            target_frame, on=schema_names, how="anti", nulls_equal=True
+        ).unique(subset=schema_names, maintain_order=True)
+        return pl.concat([target_frame, source_additions], how="vertical")
+
+    def _merge_upsert(
+        self,
+        target_frame: pl.LazyFrame,
+        source_frame: pl.LazyFrame,
+        on_columns: tuple[str, ...],
+    ) -> pl.LazyFrame:
+        if not on_columns:
+            raise ValueError("--strategy upsert requires at least one --on column.")
+
+        key_columns = list(on_columns)
+        source_deduplicated = source_frame.unique(
+            subset=key_columns,
+            keep="last",
+            maintain_order=True,
+        )
+        source_keys = source_deduplicated.select(key_columns).unique(
+            maintain_order=True
+        )
+        target_retained = target_frame.join(source_keys, on=key_columns, how="anti")
+        return pl.concat([target_retained, source_deduplicated], how="vertical")
 
     def _staged_path(
         self,

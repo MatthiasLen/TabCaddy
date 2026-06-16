@@ -84,6 +84,96 @@ def test_merge_file_to_file_row_deduplicates_exact_rows(tmp_path: Path) -> None:
     ]
 
 
+def test_merge_append_preserves_preexisting_target_duplicates(tmp_path: Path) -> None:
+    source = tmp_path / "source.csv"
+    target = tmp_path / "target.csv"
+    output = tmp_path / "merged.csv"
+
+    _write_frame(source, [{"id": 2, "value": 20}, {"id": 3, "value": 30}])
+    _write_frame(
+        target,
+        [{"id": 1, "value": 10}, {"id": 1, "value": 10}, {"id": 2, "value": 20}],
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "merge",
+            str(source),
+            str(target),
+            "--out",
+            str(output),
+            "--strategy",
+            "append",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert _read_frame(output).to_dicts() == [
+        {"id": 1, "value": 10},
+        {"id": 1, "value": 10},
+        {"id": 2, "value": 20},
+        {"id": 3, "value": 30},
+    ]
+
+
+def test_merge_upsert_replaces_rows_by_key_with_source_values(tmp_path: Path) -> None:
+    source = tmp_path / "source.csv"
+    target = tmp_path / "target.csv"
+    output = tmp_path / "merged.csv"
+
+    _write_frame(source, [{"id": 2, "value": 99}, {"id": 3, "value": 30}])
+    _write_frame(target, [{"id": 1, "value": 10}, {"id": 2, "value": 20}])
+
+    result = runner.invoke(
+        app,
+        [
+            "merge",
+            str(source),
+            str(target),
+            "--out",
+            str(output),
+            "--strategy",
+            "upsert",
+            "--on",
+            "id",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert _read_frame(output).sort("id").to_dicts() == [
+        {"id": 1, "value": 10},
+        {"id": 2, "value": 99},
+        {"id": 3, "value": 30},
+    ]
+
+
+def test_merge_upsert_requires_key_columns(tmp_path: Path) -> None:
+    source = tmp_path / "source.csv"
+    target = tmp_path / "target.csv"
+    output = tmp_path / "merged.csv"
+
+    _write_frame(source, [{"id": 2, "value": 99}])
+    _write_frame(target, [{"id": 1, "value": 10}])
+
+    result = runner.invoke(
+        app,
+        [
+            "merge",
+            str(source),
+            str(target),
+            "--out",
+            str(output),
+            "--strategy",
+            "upsert",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "--strategy upsert requires" in result.stdout
+    assert not output.exists()
+
+
 def test_merge_key_conflict_fails_without_writing_output(tmp_path: Path) -> None:
     source = tmp_path / "source.csv"
     target = tmp_path / "target.csv"
@@ -100,6 +190,26 @@ def test_merge_key_conflict_fails_without_writing_output(tmp_path: Path) -> None
     assert result.exit_code == 1
     assert not output.exists()
     assert "Conflicting duplicate key" in result.stdout
+
+
+def test_merge_key_only_schema_conflict_fails_when_target_has_duplicate_keys(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source.csv"
+    target = tmp_path / "target.csv"
+    output = tmp_path / "merged.csv"
+
+    _write_frame(source, [{"id": 2}])
+    _write_frame(target, [{"id": 1}, {"id": 1}])
+
+    result = runner.invoke(
+        app,
+        ["merge", str(source), str(target), "--on", "id", "--out", str(output)],
+    )
+
+    assert result.exit_code == 1
+    assert "Conflicting duplicate key" in result.stdout
+    assert not output.exists()
 
 
 def test_merge_rejects_compiled_dataset_source(tmp_path: Path) -> None:
@@ -500,6 +610,8 @@ def test_merge_dry_run_previews_matches_passthrough_casts_and_conflicts(
     assert "target_only.csv" in result.stdout
     assert f"destination={output_dir / 'sales.parquet'}" in result.stdout
     assert "cast=.csv->.parquet" in result.stdout
+    assert "strategy=append" in result.stdout
+    assert "insert_rows=" in result.stdout
     assert "Conflicting duplicate key detected" in result.stdout
     assert not output_dir.exists()
     assert _read_frame(target_dir / "conflict.csv").to_dicts() == [

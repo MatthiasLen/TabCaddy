@@ -16,7 +16,16 @@ class MergeConflictDetector:
             column for column in schema_names if column not in key_columns
         ]
         if not payload_columns:
-            return None
+            duplicate_key = (
+                frame.group_by(key_columns)
+                .agg(pl.len().alias("_row_count"))
+                .filter(pl.col("_row_count") > 1)
+                .limit(1)
+                .collect(engine="streaming")
+            )
+            if duplicate_key.is_empty():
+                return None
+            return duplicate_key.row(0, named=True)
 
         conflict = (
             frame.group_by(key_columns)
