@@ -200,7 +200,23 @@ The optional `context` includes:
 tabcaddy diff <left> <right> [--level metadata|statistics|full]
 ```
 
-Compare two files, two folders, or two compiled datasets.
+Compare two files, two folders, a file against a folder, or two compiled datasets.
+
+Supported source combinations:
+
+- file vs file
+- folder vs folder
+- file vs folder (either side)
+- compiled dataset vs compiled dataset
+
+Other combinations, such as file vs compiled dataset or folder vs compiled dataset, are rejected.
+
+For file-vs-folder diffs, TabCaddy matches by filename across the folder tree:
+
+- if no match is found: summary reports `missing`
+- if one unique exact-content match can be identified: summary reports `unmodified`
+- if exactly one filename match exists but content differs: summary reports `modified` and includes diff details
+- if multiple candidates remain: summary reports `ambiguous` and lists candidate paths
 
 - `metadata`: high-level file and dataset changes only
 - `statistics`: metadata plus column statistics changes
@@ -224,6 +240,7 @@ Important behavior:
 - matching inside folders is by relative path, not just filename
 - when `source` and `target` are both files, their file types must match unless `--ignore-filetype` is provided
 - exact duplicate rows are removed after appending
+- `--on` is optional; when provided, merge checks for conflicting duplicate keys after append-and-deduplicate
 - rows with the same key are not updated in place; merge is append plus validation, not an upsert
 
 How output paths work:

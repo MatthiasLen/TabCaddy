@@ -55,12 +55,22 @@ class MixedDiffer:
         matched_source = DatasetSource(
             path=match.matched_file, source_type=SourceType.FILE
         )
-        left_analysis, right_analysis = analyze_pair(
-            self._generate_analysis,
-            file_source,
-            matched_source,
-            level,
-        )
+        # Preserve original left/right order from CLI arguments to ensure output semantics
+        # match the user's command (e.g., 'diff <folder> <file>' shows folder vs file in that order)
+        if left.source_type == SourceType.FILE:
+            left_analysis, right_analysis = analyze_pair(
+                self._generate_analysis,
+                left,
+                matched_source,
+                level,
+            )
+        else:
+            left_analysis, right_analysis = analyze_pair(
+                self._generate_analysis,
+                matched_source,
+                right,
+                level,
+            )
         report = compare_analyses(left_analysis, right_analysis, level)
         report.summary = DiffSummary(
             comparison_type=DiffComparisonType.FILE_FOLDER,
