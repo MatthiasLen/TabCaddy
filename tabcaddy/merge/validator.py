@@ -414,6 +414,7 @@ class MergeValidator:
             effective_schema_items.append((column, source_schema[column]))
 
         return ValidationResult(
+            source_columns=tuple(source_schema.keys()),
             target_schema=target_schema,
             effective_schema=pl.Schema(effective_schema_items),
             schema_added_columns=schema_added_columns,
@@ -430,6 +431,7 @@ class MergeValidator:
         target_frame = align_lazyframe_to_schema(
             scan_dataframe(target),
             validation.effective_schema,
+            known_columns=validation.target_schema.keys(),
         )
         source_frame = scan_dataframe(source)
         if validation.cast_source_to_target_schema:
@@ -440,5 +442,6 @@ class MergeValidator:
         source_frame = align_lazyframe_to_schema(
             source_frame,
             validation.effective_schema,
+            known_columns=validation.source_columns,
         )
         return target_frame, source_frame

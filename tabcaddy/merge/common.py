@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Iterable, Literal
 
 import polars as pl
 
@@ -36,6 +36,7 @@ class MatchKey:
 
 @dataclass(frozen=True)
 class ValidationResult:
+    source_columns: tuple[str, ...]
     target_schema: pl.Schema
     effective_schema: pl.Schema
     schema_added_columns: tuple[str, ...]
@@ -141,8 +142,16 @@ def cast_lazyframe(frame: pl.LazyFrame, schema: pl.Schema) -> pl.LazyFrame:
     )
 
 
-def align_lazyframe_to_schema(frame: pl.LazyFrame, schema: pl.Schema) -> pl.LazyFrame:
-    current_columns = set(frame.collect_schema().names())
+def align_lazyframe_to_schema(
+    frame: pl.LazyFrame,
+    schema: pl.Schema,
+    known_columns: Iterable[str] | None = None,
+) -> pl.LazyFrame:
+    current_columns = (
+        set(known_columns)
+        if known_columns is not None
+        else set(frame.collect_schema().names())
+    )
     missing_columns = [
         pl.lit(None, dtype=dtype).alias(column)
         for column, dtype in schema.items()

@@ -109,10 +109,12 @@ class MergeExecutor:
         target_frame = align_lazyframe_to_schema(
             target_frame,
             operation.validation.effective_schema,
+            known_columns=operation.validation.target_schema.keys(),
         )
         source_frame = align_lazyframe_to_schema(
             source_frame,
             operation.validation.effective_schema,
+            known_columns=operation.validation.source_columns,
         )
 
         if strategy == "append":

@@ -28,7 +28,7 @@ class MergeDatasets:
         on_columns: tuple[str, ...],
         strategy: str,
         ignore_filetype: bool,
-        schema_evolution: str,
+        schema_evolution: str = "strict",
     ) -> list[Path]:
         (
             source_path,
@@ -86,7 +86,7 @@ class MergeDatasets:
         on_columns: tuple[str, ...],
         strategy: str,
         ignore_filetype: bool,
-        schema_evolution: str,
+        schema_evolution: str = "strict",
     ) -> tuple[list[str], bool]:
         (
             source_path,
