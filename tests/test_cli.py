@@ -15,6 +15,10 @@ def _write_csv(path: Path, rows: list[dict]) -> None:
     pl.DataFrame(rows).write_csv(path)
 
 
+def _write_nested_parquet(path: Path, rows: list[dict]) -> None:
+    pl.DataFrame(rows).write_parquet(path)
+
+
 def test_summary_and_schema_commands(tmp_path: Path) -> None:
     data = tmp_path / "data"
     data.mkdir()
@@ -276,3 +280,43 @@ def test_diff_command_returns_friendly_error_for_unsupported_combination(
 
     assert result.exit_code == 1
     assert "Unsupported diff source combination" in result.stdout
+
+
+def test_nested_parquet_columns_do_not_crash_summary_diff_or_compile(
+    tmp_path: Path,
+) -> None:
+    left = tmp_path / "left"
+    right = tmp_path / "right"
+    left.mkdir()
+    right.mkdir()
+
+    _write_nested_parquet(
+        left / "nested.parquet",
+        [
+            {"id": 1, "tags": ["a"], "meta": {"k": "x", "n": 1}},
+            {"id": 2, "tags": ["b"], "meta": {"k": "y", "n": 2}},
+        ],
+    )
+    _write_nested_parquet(
+        right / "nested.parquet",
+        [
+            {"id": 1, "tags": ["a"], "meta": {"k": "x", "n": 1}},
+            {"id": 3, "tags": ["c"], "meta": {"k": "z", "n": 3}},
+        ],
+    )
+
+    summary_result = runner.invoke(app, ["summary", str(left)])
+    assert summary_result.exit_code == 0
+    assert "Traceback" not in summary_result.stdout
+
+    diff_result = runner.invoke(app, ["diff", str(left), str(right), "--level", "full"])
+    assert diff_result.exit_code == 0
+    assert "Traceback" not in diff_result.stdout
+
+    compile_result = runner.invoke(
+        app,
+        ["compile", str(left), "--output", str(tmp_path / "compiled_nested")],
+    )
+    assert compile_result.exit_code == 0
+    assert "Traceback" not in compile_result.stdout
+    assert (tmp_path / "compiled_nested" / "metadata.json").exists()
