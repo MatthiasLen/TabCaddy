@@ -147,7 +147,7 @@ class MergeExecutor:
         on_columns: tuple[str, ...],
     ) -> pl.LazyFrame:
         if not on_columns:
-            raise ValueError("Upsert strategy requires at least one merge key column.")
+            raise ValueError("--strategy upsert requires at least one --on column.")
 
         key_columns = list(on_columns)
         source_deduplicated = source_frame.unique(
