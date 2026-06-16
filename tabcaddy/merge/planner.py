@@ -27,15 +27,19 @@ class MergePlanner:
                 raise ValueError(
                     "Source and target file types must match unless --ignore-filetype is provided."
                 )
-            if out is None or out.is_dir():
+            if inplace:
+                destination = target
+            elif out is not None and not out.is_dir():
+                destination = out
+            else:
                 raise ValueError(
-                    "File-to-file merge requires --out to point to a file."
+                    "File-to-file merge requires --out to point to a file or --inplace flag."
                 )
             return [
                 PlannedOperation(
                     source=source,
                     target=target,
-                    destination=out,
+                    destination=destination,
                     output_directory=False,
                     kind="merge",
                 )

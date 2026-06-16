@@ -148,6 +148,48 @@ def test_merge_upsert_replaces_rows_by_key_with_source_values(tmp_path: Path) ->
     ]
 
 
+def test_merge_upsert_treats_null_keys_as_matching(tmp_path: Path) -> None:
+    source = tmp_path / "source.csv"
+    target = tmp_path / "target.csv"
+    output = tmp_path / "merged.csv"
+
+    _write_frame(
+        source,
+        [
+            {"id": None, "work_order": "WO-NULL-NEW", "value": "NEW"},
+            {"id": 1001, "work_order": "WO-1001-NEW", "value": "NEW2"},
+        ],
+    )
+    _write_frame(
+        target,
+        [
+            {"id": None, "work_order": "WO-NULL-OLD", "value": "OLD"},
+            {"id": 1001, "work_order": "WO-1001-OLD", "value": "OLD2"},
+        ],
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "merge",
+            str(source),
+            str(target),
+            "--out",
+            str(output),
+            "--strategy",
+            "upsert",
+            "--on",
+            "id",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert _read_frame(output).sort(["id", "work_order"]).to_dicts() == [
+        {"id": None, "work_order": "WO-NULL-NEW", "value": "NEW"},
+        {"id": 1001, "work_order": "WO-1001-NEW", "value": "NEW2"},
+    ]
+
+
 def test_merge_schema_evolution_allow_additive_append_adds_source_columns(
     tmp_path: Path,
 ) -> None:

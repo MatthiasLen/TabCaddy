@@ -15,6 +15,10 @@ def _write_csv(path: Path, rows: list[dict]) -> None:
     pl.DataFrame(rows).write_csv(path)
 
 
+def _write_nested_parquet(path: Path, rows: list[dict]) -> None:
+    pl.DataFrame(rows).write_parquet(path)
+
+
 def test_summary_and_schema_commands(tmp_path: Path) -> None:
     data = tmp_path / "data"
     data.mkdir()
@@ -77,6 +81,58 @@ def test_scaffold_transform_fails_when_output_file_exists(tmp_path: Path) -> Non
     )
 
     assert scaffold_result.exit_code == 2
+
+
+def test_transform_fails_cleanly_when_output_folder_exists(tmp_path: Path) -> None:
+    data = tmp_path / "data"
+    data.mkdir()
+    _write_csv(data / "a.csv", [{"id": 1, "value": 10.0}])
+
+    transform_script = tmp_path / "transform.py"
+    transform_script.write_text(
+        "import polars as pl\n\ndef transform(df, context=None):\n    return df\n",
+        encoding="utf-8",
+    )
+
+    output_dir = tmp_path / "transformed"
+    output_dir.mkdir()
+
+    transform_result = runner.invoke(
+        app,
+        ["transform", str(data), str(transform_script), str(output_dir)],
+    )
+
+    assert transform_result.exit_code == 1
+    assert "Output folder already exists" in transform_result.stdout
+    assert "Traceback" not in transform_result.stdout
+
+
+def test_transform_single_file_output_path_like_file_writes_file(
+    tmp_path: Path,
+) -> None:
+    input_file = tmp_path / "input.csv"
+    _write_csv(input_file, [{"id": 1, "value": 10.0}])
+
+    transform_script = tmp_path / "transform.py"
+    transform_script.write_text(
+        "import polars as pl\n\ndef transform(df, context=None):\n    return df\n",
+        encoding="utf-8",
+    )
+
+    output_file = tmp_path / "output.csv"
+    transform_result = runner.invoke(
+        app,
+        ["transform", str(input_file), str(transform_script), str(output_file)],
+    )
+
+    assert transform_result.exit_code == 0
+    assert output_file.is_file()
+    assert not output_file.is_dir()
+    assert not (tmp_path / "output.csv" / "input.csv").exists()
+
+    transformed = pl.read_csv(output_file)
+    assert transformed.height == 1
+    assert transformed["value"][0] == 10.0
 
 
 def test_compile_transform_scaffold_and_diff_commands(tmp_path: Path) -> None:
@@ -143,6 +199,48 @@ def test_compile_accepts_parquet_inputs(tmp_path: Path) -> None:
     assert any((tmp_path / "compiled" / "data").glob("*.parquet"))
 
 
+def test_head_accepts_parquet_file_and_folder_inputs(tmp_path: Path) -> None:
+    parquet_file = tmp_path / "single.parquet"
+    pl.DataFrame([{"id": 1, "value": 10.0}, {"id": 2, "value": 11.0}]).write_parquet(
+        parquet_file
+    )
+
+    file_result = runner.invoke(app, ["head", str(parquet_file), "--n", "1"])
+    assert file_result.exit_code == 0
+    assert "id" in file_result.stdout
+    assert "value" in file_result.stdout
+
+    folder = tmp_path / "parquet_folder"
+    folder.mkdir()
+    pl.DataFrame([{"id": 10, "value": 100.0}]).write_parquet(folder / "a.parquet")
+    pl.DataFrame([{"id": 20, "value": 200.0}]).write_parquet(folder / "b.parquet")
+
+    folder_result = runner.invoke(app, ["head", str(folder), "--n", "2"])
+    assert folder_result.exit_code == 0
+    assert "a.parquet" in folder_result.stdout
+    assert "b.parquet" in folder_result.stdout
+
+
+def test_head_rejects_negative_n_for_file_and_folder(tmp_path: Path) -> None:
+    csv_file = tmp_path / "single.csv"
+    _write_csv(csv_file, [{"id": 1, "value": 10.0}])
+
+    file_result = runner.invoke(app, ["head", str(csv_file), "--n", "-1"])
+    assert file_result.exit_code == 1
+    assert "--n must be greater than or equal to 0" in file_result.stdout
+    assert "Traceback" not in file_result.stdout
+
+    folder = tmp_path / "csv_folder"
+    folder.mkdir()
+    _write_csv(folder / "a.csv", [{"id": 1, "value": 10.0}])
+    _write_csv(folder / "b.csv", [{"id": 2, "value": 20.0}])
+
+    folder_result = runner.invoke(app, ["head", str(folder), "--n", "-1"])
+    assert folder_result.exit_code == 1
+    assert "--n must be greater than or equal to 0" in folder_result.stdout
+    assert "Traceback" not in folder_result.stdout
+
+
 def test_diff_metadata_level_hides_schema_and_statistics_sections(
     tmp_path: Path,
 ) -> None:
@@ -182,3 +280,212 @@ def test_diff_command_returns_friendly_error_for_unsupported_combination(
 
     assert result.exit_code == 1
     assert "Unsupported diff source combination" in result.stdout
+
+
+def test_nested_parquet_columns_do_not_crash_summary_diff_or_compile(
+    tmp_path: Path,
+) -> None:
+    left = tmp_path / "left"
+    right = tmp_path / "right"
+    left.mkdir()
+    right.mkdir()
+
+    _write_nested_parquet(
+        left / "nested.parquet",
+        [
+            {"id": 1, "tags": ["a"], "meta": {"k": "x", "n": 1}},
+            {"id": 2, "tags": ["b"], "meta": {"k": "y", "n": 2}},
+        ],
+    )
+    _write_nested_parquet(
+        right / "nested.parquet",
+        [
+            {"id": 1, "tags": ["a"], "meta": {"k": "x", "n": 1}},
+            {"id": 3, "tags": ["c"], "meta": {"k": "z", "n": 3}},
+        ],
+    )
+
+    summary_result = runner.invoke(app, ["summary", str(left)])
+    assert summary_result.exit_code == 0
+    assert "Traceback" not in summary_result.stdout
+
+    diff_result = runner.invoke(app, ["diff", str(left), str(right), "--level", "full"])
+    assert diff_result.exit_code == 0
+    assert "Traceback" not in diff_result.stdout
+
+    compile_result = runner.invoke(
+        app,
+        ["compile", str(left), "--output", str(tmp_path / "compiled_nested")],
+    )
+    assert compile_result.exit_code == 0
+    assert "Traceback" not in compile_result.stdout
+    assert (tmp_path / "compiled_nested" / "metadata.json").exists()
+
+
+def test_binary_parquet_columns_do_not_crash_summary_diff_or_compile(
+    tmp_path: Path,
+) -> None:
+    left = tmp_path / "left"
+    right = tmp_path / "right"
+    left.mkdir()
+    right.mkdir()
+
+    pl.DataFrame(
+        [
+            {"id": 1, "blob": b"abc"},
+            {"id": 2, "blob": b"\xff\xfe"},
+        ]
+    ).write_parquet(left / "binary.parquet")
+    pl.DataFrame(
+        [
+            {"id": 1, "blob": b"abc"},
+            {"id": 3, "blob": b"xyz"},
+        ]
+    ).write_parquet(right / "binary.parquet")
+
+    summary_result = runner.invoke(app, ["summary", str(left), "--profile", "deep"])
+    assert summary_result.exit_code == 0
+    assert "Traceback" not in summary_result.stdout
+
+    diff_result = runner.invoke(app, ["diff", str(left), str(right), "--level", "full"])
+    assert diff_result.exit_code == 0
+    assert "Traceback" not in diff_result.stdout
+
+    compile_result = runner.invoke(
+        app,
+        ["compile", str(left), "--output", str(tmp_path / "compiled_binary")],
+    )
+    assert compile_result.exit_code == 0
+    assert "Traceback" not in compile_result.stdout
+    assert (tmp_path / "compiled_binary" / "metadata.json").exists()
+
+
+def test_duration_parquet_columns_do_not_crash_summary_diff_or_compile(
+    tmp_path: Path,
+) -> None:
+    left = tmp_path / "left"
+    right = tmp_path / "right"
+    left.mkdir()
+    right.mkdir()
+
+    pl.DataFrame({"id": [1, 2], "dur": [1000, 2000]}).with_columns(
+        pl.col("dur").cast(pl.Duration("ms"))
+    ).write_parquet(left / "duration.parquet")
+    pl.DataFrame({"id": [1, 3], "dur": [1000, 3000]}).with_columns(
+        pl.col("dur").cast(pl.Duration("ms"))
+    ).write_parquet(right / "duration.parquet")
+
+    summary_result = runner.invoke(app, ["summary", str(left), "--profile", "deep"])
+    assert summary_result.exit_code == 0
+    assert "Traceback" not in summary_result.stdout
+
+    diff_result = runner.invoke(app, ["diff", str(left), str(right), "--level", "full"])
+    assert diff_result.exit_code == 0
+    assert "Traceback" not in diff_result.stdout
+
+    compile_result = runner.invoke(
+        app,
+        ["compile", str(left), "--output", str(tmp_path / "compiled_duration")],
+    )
+    assert compile_result.exit_code == 0
+    assert "Traceback" not in compile_result.stdout
+    assert (tmp_path / "compiled_duration" / "metadata.json").exists()
+
+
+def test_nan_inf_float_columns_do_not_crash_summary_diff_or_compile(
+    tmp_path: Path,
+) -> None:
+    left = tmp_path / "left"
+    right = tmp_path / "right"
+    left.mkdir()
+    right.mkdir()
+
+    pl.DataFrame(
+        {
+            "id": [1, 2, 3, 4],
+            "x": [float("-inf"), -1.0, 0.0, float("inf")],
+            "y": [float("nan"), 1.0, 2.0, 3.0],
+        }
+    ).write_parquet(left / "edges.parquet")
+    pl.DataFrame(
+        {
+            "id": [1, 2, 3, 5],
+            "x": [float("-inf"), -1.0, 1.0, float("inf")],
+            "y": [float("nan"), 1.5, 2.5, 3.5],
+        }
+    ).write_parquet(right / "edges.parquet")
+
+    summary_result = runner.invoke(app, ["summary", str(left), "--profile", "deep"])
+    assert summary_result.exit_code == 0
+    assert "Traceback" not in summary_result.stdout
+
+    diff_result = runner.invoke(app, ["diff", str(left), str(right), "--level", "full"])
+    assert diff_result.exit_code == 0
+    assert "Traceback" not in diff_result.stdout
+
+    compile_result = runner.invoke(
+        app,
+        ["compile", str(left), "--output", str(tmp_path / "compiled_edges")],
+    )
+    assert compile_result.exit_code == 0
+    assert "Traceback" not in compile_result.stdout
+    assert (tmp_path / "compiled_edges" / "metadata.json").exists()
+
+
+def test_summary_and_schema_missing_source_fail_without_traceback(
+    tmp_path: Path,
+) -> None:
+    missing = tmp_path / "missing_source"
+
+    summary_result = runner.invoke(app, ["summary", str(missing)])
+    schema_result = runner.invoke(app, ["schema", str(missing)])
+
+    assert summary_result.exit_code == 1
+    assert "Source does not exist" in summary_result.stdout
+    assert "Traceback" not in summary_result.stdout
+
+    assert schema_result.exit_code == 1
+    assert "Source does not exist" in schema_result.stdout
+    assert "Traceback" not in schema_result.stdout
+
+
+def test_transform_user_script_failures_fail_without_traceback(
+    tmp_path: Path,
+) -> None:
+    data = tmp_path / "data"
+    data.mkdir()
+    _write_csv(data / "a.csv", [{"id": 1, "value": 10.0}])
+
+    missing_dep_script = tmp_path / "missing_dep_transform.py"
+    missing_dep_script.write_text(
+        "import definitely_not_installed_pkg\n\ndef transform(df):\n    return df\n",
+        encoding="utf-8",
+    )
+
+    runtime_script = tmp_path / "runtime_transform.py"
+    runtime_script.write_text(
+        "def transform(df):\n    return 1 / 0\n",
+        encoding="utf-8",
+    )
+
+    missing_dep_result = runner.invoke(
+        app,
+        [
+            "transform",
+            str(data),
+            str(missing_dep_script),
+            str(tmp_path / "out_missing_dep"),
+        ],
+    )
+    runtime_result = runner.invoke(
+        app,
+        ["transform", str(data), str(runtime_script), str(tmp_path / "out_runtime")],
+    )
+
+    assert missing_dep_result.exit_code == 1
+    assert "definitely_not_installed_pkg" in missing_dep_result.stdout
+    assert "Traceback" not in missing_dep_result.stdout
+
+    assert runtime_result.exit_code == 1
+    assert "division by zero" in runtime_result.stdout
+    assert "Traceback" not in runtime_result.stdout

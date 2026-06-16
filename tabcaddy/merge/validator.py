@@ -317,7 +317,9 @@ class MergeValidator:
                     maintain_order=True,
                 )
                 inserts = (
-                    source_frame.join(target_unique, on=schema_names, how="anti")
+                    source_frame.join(
+                        target_unique, on=schema_names, how="anti", nulls_equal=True
+                    )
                     .select(pl.len().alias("rows"))
                     .collect(engine="streaming")
                     .item()
@@ -329,7 +331,12 @@ class MergeValidator:
             key_columns = list(on_columns)
             upsert_keys = source_frame.select(key_columns).unique(maintain_order=True)
             replaced = (
-                target_frame.join(upsert_keys, on=key_columns, how="semi")
+                target_frame.join(
+                    upsert_keys,
+                    on=key_columns,
+                    how="semi",
+                    nulls_equal=True,
+                )
                 .select(pl.len().alias("rows"))
                 .collect(engine="streaming")
                 .item()
@@ -339,6 +346,7 @@ class MergeValidator:
                     target_frame.select(key_columns).unique(maintain_order=True),
                     on=key_columns,
                     how="anti",
+                    nulls_equal=True,
                 )
                 .select(pl.len().alias("rows"))
                 .collect(engine="streaming")

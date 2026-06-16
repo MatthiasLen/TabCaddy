@@ -44,7 +44,12 @@ def summary(
     console = create_console()
     render = resolve_render_profile(console)
 
-    result = GenerateAnalysis().run(resolve_source(source), profile)
+    try:
+        result = GenerateAnalysis().run(resolve_source(source), profile)
+    except (FileNotFoundError, ValueError) as error:
+        console.print(f"[red]{error}[/red]")
+        raise typer.Exit(code=1) from error
+
     console.print(build_summary_view(result.analysis, render=render))
 
 
@@ -56,7 +61,12 @@ def schema(
     console = create_console()
     render = resolve_render_profile(console)
 
-    result = GenerateAnalysis().run(resolve_source(source), ProfileMode.QUICK)
+    try:
+        result = GenerateAnalysis().run(resolve_source(source), ProfileMode.QUICK)
+    except (FileNotFoundError, ValueError) as error:
+        console.print(f"[red]{error}[/red]")
+        raise typer.Exit(code=1) from error
+
     console.print(build_schema_view(result.analysis, result.files, render=render))
 
 
@@ -112,8 +122,14 @@ def transform(
     workers: int = typer.Option(1, "--workers", min=1),
 ) -> None:
     console = create_console()
-    source = resolve_source(input_path)
-    destination = TransformDataset().run(source, transform_path, output_path, workers)
+    try:
+        source = resolve_source(input_path)
+        destination = TransformDataset().run(
+            source, transform_path, output_path, workers
+        )
+    except Exception as error:
+        console.print(f"[red]{error}[/red]")
+        raise typer.Exit(code=1) from error
     console.print(f"Transformed files written to [green]{destination}[/green]")
 
 
@@ -166,10 +182,15 @@ def head(
     ),
     show_meta: bool = typer.Option(False, "--showmeta", help="Show metadata columns"),
 ) -> None:
-    source = Path(source).expanduser().resolve()
     console = create_console()
     render = resolve_render_profile(console)
-    result = HeadDataset().run(resolve_source(source), n)
+    try:
+        source = Path(source).expanduser().resolve()
+        result = HeadDataset().run(resolve_source(source), n)
+    except (FileNotFoundError, ValueError) as error:
+        console.print(f"[red]{error}[/red]")
+        raise typer.Exit(code=1) from error
+
     if result.is_folder:
         console.print(
             build_folder_head_view(

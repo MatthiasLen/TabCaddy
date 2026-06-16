@@ -12,7 +12,11 @@ from tabcaddy.analysis.builder import AnalysisBuilder
 from tabcaddy.analysis.schema import SchemaAnalyzer
 from tabcaddy.analysis.sources import iter_dataset_files
 from tabcaddy.domain.models import DatasetSource, ProfileMode, SourceType
-from tabcaddy.shared.dataset_io import read_dataframe, write_dataframe
+from tabcaddy.shared.dataset_io import (
+    SUPPORTED_FILE_SUFFIXES,
+    read_dataframe,
+    write_dataframe,
+)
 from tabcaddy.shared.serialization import analysis_to_dict
 from tabcaddy.transforms.loader import (
     TransformContext,
@@ -50,11 +54,25 @@ class TransformDataset:
         output_path: Path | None,
         workers: int,
     ) -> Path:
-        output_root = output_path or self._default_output_path(source.path)
-        if output_root.exists():
-            raise FileExistsError(f"Output folder already exists: {output_root}")
+        write_to_single_file = (
+            source.source_type == SourceType.FILE
+            and output_path is not None
+            and self._is_file_output_path(output_path)
+        )
 
-        output_root.mkdir(parents=True)
+        output_file: Path | None = None
+        output_root: Path | None = None
+        if write_to_single_file:
+            output_file = output_path
+            if output_file.exists():
+                raise FileExistsError(f"Output file already exists: {output_file}")
+            output_file.parent.mkdir(parents=True, exist_ok=True)
+        else:
+            output_root = output_path or self._default_output_path(source.path)
+            if output_root.exists():
+                raise FileExistsError(f"Output folder already exists: {output_root}")
+            output_root.mkdir(parents=True)
+
         transform, expects_context = self._transform_loader.load(transform_path)
         files = iter_dataset_files(source)
         schema_result = self._schema_analyzer.analyze_files(
@@ -81,12 +99,16 @@ class TransformDataset:
                 raise TypeError(
                     f"Transform must return a Polars DataFrame for {path.name}"
                 )
-            relative_path = (
-                record.relative_path
-                if source.source_type != SourceType.FILE
-                else Path(path.name)
-            )
-            target = output_root / relative_path
+            if output_file is not None:
+                target = output_file
+            else:
+                assert output_root is not None
+                relative_path = (
+                    record.relative_path
+                    if source.source_type != SourceType.FILE
+                    else Path(path.name)
+                )
+                target = output_root / relative_path
             write_dataframe(result, target)
             return target
 
@@ -97,6 +119,10 @@ class TransformDataset:
                 written_files = list(executor.map(process, files))
 
         if source.source_type == SourceType.COMPILED_DATASET:
+            if output_root is None:
+                raise ValueError(
+                    "Compiled dataset transform requires directory output."
+                )
             self._write_compiled_metadata(
                 source=source,
                 transform_path=transform_path,
@@ -104,7 +130,15 @@ class TransformDataset:
                 written_files=written_files,
             )
 
+        if output_file is not None:
+            return output_file
+        assert output_root is not None
         return output_root
+
+    def _is_file_output_path(self, output_path: Path) -> bool:
+        if output_path.exists():
+            return output_path.is_file()
+        return output_path.suffix.lower() in SUPPORTED_FILE_SUFFIXES
 
     def _write_compiled_metadata(
         self,

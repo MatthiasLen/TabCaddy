@@ -37,7 +37,7 @@ class CompileDataset:
                 + ", ".join(labels)
             )
 
-        chosen_index = schema_index or 1
+        chosen_index = schema_index if schema_index is not None else 1
         if chosen_index < 1 or chosen_index > len(schemas):
             raise ValueError(f"Schema index must be between 1 and {len(schemas)}")
 

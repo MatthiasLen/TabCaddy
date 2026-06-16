@@ -54,6 +54,20 @@ def _is_temporal_dtype(dtype: Any) -> bool:
     )
 
 
+def _is_duration_dtype(dtype: Any) -> bool:
+    return "Duration" in str(dtype)
+
+
+def _supports_min_max(dtype: Any) -> bool:
+    probe = getattr(dtype, "is_nested", None)
+    if callable(probe):
+        return not bool(probe())
+    if probe is not None:
+        return not bool(probe)
+    dtype_str = str(dtype)
+    return "List(" not in dtype_str and "Struct(" not in dtype_str
+
+
 def _normalise_value(value: Any) -> Any:
     if value is None:
         return None
@@ -61,12 +75,16 @@ def _normalise_value(value: Any) -> Any:
         return None
     if isinstance(value, Decimal):
         return float(value)
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        return bytes(value).hex()
     if isinstance(value, (datetime, date, time)):
         return value.isoformat()
     return value
 
 
 def _get_temporal_format(dtype: Any) -> str:
+    if _is_duration_dtype(dtype):
+        return "iso"
     dtype_str = str(dtype)
     if "Datetime" in dtype_str:
         return (
@@ -80,6 +98,10 @@ def _get_temporal_format(dtype: Any) -> str:
 
 
 def _format_histogram_bound(value: float) -> str:
+    if math.isnan(value):
+        return "nan"
+    if math.isinf(value):
+        return "inf" if value > 0 else "-inf"
     if math.isclose(value, round(value), rel_tol=1e-9, abs_tol=1e-9):
         return str(int(round(value)))
     return f"{value:.3g}"
@@ -195,27 +217,33 @@ class AnalysisBuilder:
             prefix = f"c{index}"
             is_numeric = _is_numeric_dtype(dtype)
             is_temporal = _is_temporal_dtype(dtype)
+            supports_min_max = _supports_min_max(dtype)
+            supports_approx_n_unique = supports_min_max
             descriptors.append((prefix, name, dtype))
 
-            expressions.extend(
-                [
-                    pl.col(name)
-                    .is_null()
-                    .mean()
-                    .fill_null(0.0)
-                    .alias(f"{prefix}_null_rate"),
-                    (
-                        pl.col(name).min().dt.to_string(_get_temporal_format(dtype))
-                        if is_temporal
-                        else pl.col(name).min()
-                    ).alias(f"{prefix}_min"),
-                    (
-                        pl.col(name).max().dt.to_string(_get_temporal_format(dtype))
-                        if is_temporal
-                        else pl.col(name).max()
-                    ).alias(f"{prefix}_max"),
-                ]
+            expressions.append(
+                pl.col(name)
+                .is_null()
+                .mean()
+                .fill_null(0.0)
+                .alias(f"{prefix}_null_rate")
             )
+
+            if supports_min_max:
+                expressions.extend(
+                    [
+                        (
+                            pl.col(name).min().dt.to_string(_get_temporal_format(dtype))
+                            if is_temporal
+                            else pl.col(name).min()
+                        ).alias(f"{prefix}_min"),
+                        (
+                            pl.col(name).max().dt.to_string(_get_temporal_format(dtype))
+                            if is_temporal
+                            else pl.col(name).max()
+                        ).alias(f"{prefix}_max"),
+                    ]
+                )
 
             if is_numeric:
                 expressions.extend(
@@ -235,7 +263,7 @@ class AnalysisBuilder:
                     .alias(f"{prefix}_median")
                 )
 
-            if profile_mode == ProfileMode.DEEP:
+            if profile_mode == ProfileMode.DEEP and supports_approx_n_unique:
                 expressions.append(
                     pl.col(name).approx_n_unique().alias(f"{prefix}_unique")
                 )
@@ -261,7 +289,7 @@ class AnalysisBuilder:
                 dtype=str(dtype),
                 null_rate=float(values.get(f"{prefix}_null_rate", 0.0) or 0.0),
                 unique_estimate=None
-                if profile_mode != ProfileMode.DEEP
+                if profile_mode != ProfileMode.DEEP or not _supports_min_max(dtype)
                 else int(values.get(f"{prefix}_unique", 0) or 0),
                 min_value=(
                     values.get(f"{prefix}_min")
@@ -296,10 +324,21 @@ class AnalysisBuilder:
         descriptors: list[tuple[str, str, Any]],
         values: dict[str, Any],
     ) -> tuple[dict[str, str], dict[str, list[tuple[str, int]]]]:
-        hash_digests = {name: sha256() for _, name, _ in descriptors}
+        hashable_columns = [
+            (name, dtype)
+            for _, name, dtype in descriptors
+            if _supports_min_max(dtype) and not _is_duration_dtype(dtype)
+        ]
+        hash_digests = {name: sha256() for name, _ in hashable_columns}
         string_expressions = [
-            pl.col(name).cast(pl.String).fill_null("<NULL>").alias(name)
-            for _, name, _ in descriptors
+            (
+                pl.col(name).bin.encode("hex")
+                if "Binary" in str(dtype)
+                else pl.col(name).cast(pl.String)
+            )
+            .fill_null("<NULL>")
+            .alias(name)
+            for name, dtype in hashable_columns
         ]
         histogram_counts: dict[str, np.ndarray] = {}
         histogram_edges: dict[str, np.ndarray] = {}
@@ -313,6 +352,8 @@ class AnalysisBuilder:
                 continue
             lower = float(values[f"{prefix}_min"])
             upper = float(values[f"{prefix}_max"])
+            if not math.isfinite(lower) or not math.isfinite(upper):
+                continue
             if math.isclose(lower, upper, rel_tol=1e-9, abs_tol=1e-9):
                 histograms[name] = [(_format_histogram_bound(lower), non_null_count)]
                 continue
