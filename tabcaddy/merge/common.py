@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Iterable, Literal
 
 import polars as pl
 
@@ -15,6 +15,7 @@ _CSV_SUFFIX = ".csv"
 _FEATHER_ARROW_SUFFIXES = {".feather", ".arrow"}
 MergeOperationKind = Literal["merge", "source_only", "target_passthrough"]
 MergeStrategy = Literal["append", "upsert"]
+SchemaEvolution = Literal["strict", "allow-additive"]
 
 
 @dataclass(frozen=True)
@@ -35,7 +36,10 @@ class MatchKey:
 
 @dataclass(frozen=True)
 class ValidationResult:
+    source_columns: tuple[str, ...]
     target_schema: pl.Schema
+    effective_schema: pl.Schema
+    schema_added_columns: tuple[str, ...]
     cast_source_to_target_schema: bool
     conflicting_columns: list[str]
 
@@ -135,6 +139,30 @@ def scan_dataframe(path: Path) -> pl.LazyFrame:
 def cast_lazyframe(frame: pl.LazyFrame, schema: pl.Schema) -> pl.LazyFrame:
     return frame.with_columns(
         pl.col(column).cast(dtype, strict=True) for column, dtype in schema.items()
+    )
+
+
+def align_lazyframe_to_schema(
+    frame: pl.LazyFrame,
+    schema: pl.Schema,
+    known_columns: Iterable[str] | None = None,
+) -> pl.LazyFrame:
+    current_columns = (
+        set(known_columns)
+        if known_columns is not None
+        else set(frame.collect_schema().names())
+    )
+    missing_columns = [
+        pl.lit(None, dtype=dtype).alias(column)
+        for column, dtype in schema.items()
+        if column not in current_columns
+    ]
+    if missing_columns:
+        frame = frame.with_columns(missing_columns)
+
+    return frame.select(
+        pl.col(column).cast(dtype, strict=True).alias(column)
+        for column, dtype in schema.items()
     )
 
 

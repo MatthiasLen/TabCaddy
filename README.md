@@ -225,7 +225,7 @@ For file-vs-folder diffs, TabCaddy matches by filename across the folder tree:
 `merge`
 
 ```bash
-tabcaddy merge <source> <target> (--out <path> | --inplace) [--on COLUMN ...] [--strategy append|upsert] [--ignore-filetype] [--dry]
+tabcaddy merge <source> <target> (--out <path> | --inplace) [--on COLUMN ...] [--strategy append|upsert] [--schema-evolution strict|allow-additive] [--ignore-filetype] [--dry]
 ```
 
 Merge appends source rows onto matching target files and writes the result using the target file layout.
@@ -242,6 +242,9 @@ Important behavior:
 - default `--strategy append` preserves target rows and appends only source rows that are not already present in target
 - `--strategy upsert` requires `--on`; matching target keys are replaced by source rows (source wins)
 - `--on` is optional for append; when provided, merge checks for conflicting duplicate keys after append
+- default `--schema-evolution strict` requires source and target to have the same column layout
+- `--schema-evolution allow-additive` unions columns (target order first, then source-only columns), filling missing values with nulls
+- `--schema-evolution allow-additive` is not supported with `--ignore-filetype` in v1
 
 How output paths work:
 
@@ -260,7 +263,7 @@ How matching works:
 
 Schema and type rules:
 
-- source and target must have the same columns in the same order
+- in strict mode, source and target must have the same columns in the same order
 - merge key columns passed with `--on` must exist in both inputs
 - without `--ignore-filetype`, differing column dtypes are rejected
 - with `--ignore-filetype`, TabCaddy can cast CSV source columns into a binary target schema when the cast is valid
