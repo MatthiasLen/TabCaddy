@@ -54,6 +54,10 @@ def _is_temporal_dtype(dtype: Any) -> bool:
     )
 
 
+def _is_duration_dtype(dtype: Any) -> bool:
+    return "Duration" in str(dtype)
+
+
 def _supports_min_max(dtype: Any) -> bool:
     probe = getattr(dtype, "is_nested", None)
     if callable(probe):
@@ -64,10 +68,6 @@ def _supports_min_max(dtype: Any) -> bool:
     return "List(" not in dtype_str and "Struct(" not in dtype_str
 
 
-def _supports_approx_n_unique(dtype: Any) -> bool:
-    return _supports_min_max(dtype)
-
-
 def _normalise_value(value: Any) -> Any:
     if value is None:
         return None
@@ -75,12 +75,16 @@ def _normalise_value(value: Any) -> Any:
         return None
     if isinstance(value, Decimal):
         return float(value)
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        return bytes(value).hex()
     if isinstance(value, (datetime, date, time)):
         return value.isoformat()
     return value
 
 
 def _get_temporal_format(dtype: Any) -> str:
+    if _is_duration_dtype(dtype):
+        return "iso"
     dtype_str = str(dtype)
     if "Datetime" in dtype_str:
         return (
@@ -210,7 +214,7 @@ class AnalysisBuilder:
             is_numeric = _is_numeric_dtype(dtype)
             is_temporal = _is_temporal_dtype(dtype)
             supports_min_max = _supports_min_max(dtype)
-            supports_approx_n_unique = _supports_approx_n_unique(dtype)
+            supports_approx_n_unique = supports_min_max
             descriptors.append((prefix, name, dtype))
 
             expressions.append(
@@ -281,8 +285,7 @@ class AnalysisBuilder:
                 dtype=str(dtype),
                 null_rate=float(values.get(f"{prefix}_null_rate", 0.0) or 0.0),
                 unique_estimate=None
-                if profile_mode != ProfileMode.DEEP
-                or not _supports_approx_n_unique(dtype)
+                if profile_mode != ProfileMode.DEEP or not _supports_min_max(dtype)
                 else int(values.get(f"{prefix}_unique", 0) or 0),
                 min_value=(
                     values.get(f"{prefix}_min")
@@ -320,7 +323,7 @@ class AnalysisBuilder:
         hashable_columns = [
             (name, dtype)
             for _, name, dtype in descriptors
-            if _supports_approx_n_unique(dtype)
+            if _supports_min_max(dtype) and not _is_duration_dtype(dtype)
         ]
         hash_digests = {name: sha256() for name, _ in hashable_columns}
         string_expressions = [

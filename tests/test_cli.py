@@ -320,3 +320,73 @@ def test_nested_parquet_columns_do_not_crash_summary_diff_or_compile(
     assert compile_result.exit_code == 0
     assert "Traceback" not in compile_result.stdout
     assert (tmp_path / "compiled_nested" / "metadata.json").exists()
+
+
+def test_binary_parquet_columns_do_not_crash_summary_diff_or_compile(
+    tmp_path: Path,
+) -> None:
+    left = tmp_path / "left"
+    right = tmp_path / "right"
+    left.mkdir()
+    right.mkdir()
+
+    pl.DataFrame(
+        [
+            {"id": 1, "blob": b"abc"},
+            {"id": 2, "blob": b"def"},
+        ]
+    ).write_parquet(left / "binary.parquet")
+    pl.DataFrame(
+        [
+            {"id": 1, "blob": b"abc"},
+            {"id": 3, "blob": b"xyz"},
+        ]
+    ).write_parquet(right / "binary.parquet")
+
+    summary_result = runner.invoke(app, ["summary", str(left), "--profile", "deep"])
+    assert summary_result.exit_code == 0
+    assert "Traceback" not in summary_result.stdout
+
+    diff_result = runner.invoke(app, ["diff", str(left), str(right), "--level", "full"])
+    assert diff_result.exit_code == 0
+    assert "Traceback" not in diff_result.stdout
+
+    compile_result = runner.invoke(
+        app,
+        ["compile", str(left), "--output", str(tmp_path / "compiled_binary")],
+    )
+    assert compile_result.exit_code == 0
+    assert "Traceback" not in compile_result.stdout
+    assert (tmp_path / "compiled_binary" / "metadata.json").exists()
+
+
+def test_duration_parquet_columns_do_not_crash_summary_diff_or_compile(
+    tmp_path: Path,
+) -> None:
+    left = tmp_path / "left"
+    right = tmp_path / "right"
+    left.mkdir()
+    right.mkdir()
+
+    pl.DataFrame({"id": [1, 2], "dur": [1000, 2000]}).with_columns(
+        pl.col("dur").cast(pl.Duration("ms"))
+    ).write_parquet(left / "duration.parquet")
+    pl.DataFrame({"id": [1, 3], "dur": [1000, 3000]}).with_columns(
+        pl.col("dur").cast(pl.Duration("ms"))
+    ).write_parquet(right / "duration.parquet")
+
+    summary_result = runner.invoke(app, ["summary", str(left), "--profile", "deep"])
+    assert summary_result.exit_code == 0
+    assert "Traceback" not in summary_result.stdout
+
+    diff_result = runner.invoke(app, ["diff", str(left), str(right), "--level", "full"])
+    assert diff_result.exit_code == 0
+    assert "Traceback" not in diff_result.stdout
+
+    compile_result = runner.invoke(
+        app,
+        ["compile", str(left), "--output", str(tmp_path / "compiled_duration")],
+    )
+    assert compile_result.exit_code == 0
+    assert "Traceback" not in compile_result.stdout
+    assert (tmp_path / "compiled_duration" / "metadata.json").exists()
