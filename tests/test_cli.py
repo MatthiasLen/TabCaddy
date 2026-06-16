@@ -86,9 +86,7 @@ def test_transform_fails_cleanly_when_output_folder_exists(tmp_path: Path) -> No
 
     transform_script = tmp_path / "transform.py"
     transform_script.write_text(
-        "import polars as pl\n\n"
-        "def transform(df, context=None):\n"
-        "    return df\n",
+        "import polars as pl\n\ndef transform(df, context=None):\n    return df\n",
         encoding="utf-8",
     )
 

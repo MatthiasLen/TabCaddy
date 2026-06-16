@@ -114,7 +114,9 @@ def transform(
     console = create_console()
     try:
         source = resolve_source(input_path)
-        destination = TransformDataset().run(source, transform_path, output_path, workers)
+        destination = TransformDataset().run(
+            source, transform_path, output_path, workers
+        )
     except (FileExistsError, FileNotFoundError, ValueError, TypeError) as error:
         console.print(f"[red]{error}[/red]")
         raise typer.Exit(code=1) from error

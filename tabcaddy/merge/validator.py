@@ -317,7 +317,9 @@ class MergeValidator:
                     maintain_order=True,
                 )
                 inserts = (
-                    source_frame.join(target_unique, on=schema_names, how="anti")
+                    source_frame.join(
+                        target_unique, on=schema_names, how="anti", nulls_equal=True
+                    )
                     .select(pl.len().alias("rows"))
                     .collect(engine="streaming")
                     .item()
