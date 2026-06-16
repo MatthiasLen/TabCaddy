@@ -9,6 +9,7 @@ import polars as pl
 
 from tabcaddy.merge.common import (
     PreparedOperation,
+    align_lazyframe_to_schema,
     cast_lazyframe,
     scan_dataframe,
     stage_lazyframe,
@@ -100,8 +101,17 @@ class MergeExecutor:
                 operation.validation.target_schema,
             )
 
+        source_frame = align_lazyframe_to_schema(
+            source_frame,
+            operation.validation.effective_schema,
+        )
+        target_frame = align_lazyframe_to_schema(
+            scan_dataframe(operation.target),
+            operation.validation.effective_schema,
+        )
+
         deduplicated = pl.concat(
-            [scan_dataframe(operation.target), source_frame],
+            [target_frame, source_frame],
             how="vertical",
         ).unique(maintain_order=True)
 

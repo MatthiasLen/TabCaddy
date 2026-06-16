@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from tabcaddy.merge.common import resolve_merge_path
+from tabcaddy.merge.common import SchemaEvolution, resolve_merge_path
 from tabcaddy.merge.executor import MergeExecutor
 from tabcaddy.merge.planner import MergePlanner
 from tabcaddy.merge.validator import MergeValidator
@@ -27,6 +27,7 @@ class MergeDatasets:
         inplace: bool,
         on_columns: tuple[str, ...],
         ignore_filetype: bool,
+        schema_evolution: str = "strict",
     ) -> list[Path]:
         source_path = resolve_merge_path(source, role="source")
         target_path = resolve_merge_path(target, role="target")
@@ -34,6 +35,12 @@ class MergeDatasets:
 
         if inplace == (output_path is not None):
             raise ValueError("Provide exactly one of --out or --inplace.")
+
+        resolved_schema_evolution = self._resolve_schema_evolution(schema_evolution)
+        if resolved_schema_evolution == "allow-additive" and ignore_filetype:
+            raise ValueError(
+                "--schema-evolution allow-additive is not supported with --ignore-filetype."
+            )
 
         operations = self._planner.plan(
             source=source_path,
@@ -48,6 +55,7 @@ class MergeDatasets:
             inplace=inplace,
             on_columns=on_columns,
             ignore_filetype=ignore_filetype,
+            schema_evolution=resolved_schema_evolution,
         )
 
         transaction_root: Path | None = None
@@ -70,6 +78,7 @@ class MergeDatasets:
         inplace: bool,
         on_columns: tuple[str, ...],
         ignore_filetype: bool,
+        schema_evolution: str = "strict",
     ) -> tuple[list[str], bool]:
         source_path = resolve_merge_path(source, role="source")
         target_path = resolve_merge_path(target, role="target")
@@ -77,6 +86,12 @@ class MergeDatasets:
 
         if inplace == (output_path is not None):
             raise ValueError("Provide exactly one of --out or --inplace.")
+
+        resolved_schema_evolution = self._resolve_schema_evolution(schema_evolution)
+        if resolved_schema_evolution == "allow-additive" and ignore_filetype:
+            raise ValueError(
+                "--schema-evolution allow-additive is not supported with --ignore-filetype."
+            )
 
         operations = self._planner.plan(
             source=source_path,
@@ -91,4 +106,11 @@ class MergeDatasets:
             inplace=inplace,
             on_columns=on_columns,
             ignore_filetype=ignore_filetype,
+            schema_evolution=resolved_schema_evolution,
         )
+
+    def _resolve_schema_evolution(self, schema_evolution: str) -> SchemaEvolution:
+        lowered = schema_evolution.lower()
+        if lowered in {"strict", "allow-additive"}:
+            return lowered
+        raise ValueError(f"Unsupported schema evolution mode: {schema_evolution}")

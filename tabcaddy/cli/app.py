@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 
 import typer
 
@@ -211,6 +212,14 @@ def merge(
         "--ignore-filetype",
         help="Allow folder matching across CSV, Parquet, Feather, and Arrow extensions.",
     ),
+    schema_evolution: Literal["strict", "allow-additive"] = typer.Option(
+        "strict",
+        "--schema-evolution",
+        help=(
+            "Schema mode. strict (default) requires matching column layouts. "
+            "allow-additive permits extra columns and fills missing values with null."
+        ),
+    ),
     dry: bool = typer.Option(
         False,
         "--dry",
@@ -229,6 +238,7 @@ def merge(
                 inplace=inplace,
                 on_columns=tuple(on or ()),
                 ignore_filetype=ignore_filetype,
+                schema_evolution=schema_evolution,
             )
         else:
             written = merge_datasets.run(
@@ -238,6 +248,7 @@ def merge(
                 inplace=inplace,
                 on_columns=tuple(on or ()),
                 ignore_filetype=ignore_filetype,
+                schema_evolution=schema_evolution,
             )
     except (FileExistsError, FileNotFoundError, ValueError) as error:
         console.print(f"[red]{error}[/red]")

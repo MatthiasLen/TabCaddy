@@ -8,7 +8,9 @@ from tabcaddy.analysis.sources import SUPPORTED_FILE_SUFFIXES
 from tabcaddy.merge.common import (
     PlannedOperation,
     PreparedOperation,
+    SchemaEvolution,
     ValidationResult,
+    align_lazyframe_to_schema,
     cast_lazyframe,
     is_binary,
     is_csv,
@@ -31,6 +33,7 @@ class MergeValidator:
         inplace: bool,
         on_columns: tuple[str, ...],
         ignore_filetype: bool,
+        schema_evolution: SchemaEvolution = "strict",
     ) -> list[PreparedOperation]:
         if not operations:
             raise ValueError("No supported source files found to merge.")
@@ -44,7 +47,12 @@ class MergeValidator:
         for operation in operations:
             self._validate_destination(operation.destination, destinations, inplace)
             prepared_operations.append(
-                self._prepare_operation(operation, on_columns, ignore_filetype)
+                self._prepare_operation(
+                    operation,
+                    on_columns,
+                    ignore_filetype,
+                    schema_evolution,
+                )
             )
         return prepared_operations
 
@@ -55,6 +63,7 @@ class MergeValidator:
         inplace: bool,
         on_columns: tuple[str, ...],
         ignore_filetype: bool,
+        schema_evolution: SchemaEvolution = "strict",
     ) -> tuple[list[str], bool]:
         if not operations:
             raise ValueError("No supported source files found to merge.")
@@ -77,6 +86,7 @@ class MergeValidator:
                     operation=operation,
                     on_columns=on_columns,
                     ignore_filetype=ignore_filetype,
+                    schema_evolution=schema_evolution,
                 )
             if issue is not None:
                 has_issues = True
@@ -101,6 +111,7 @@ class MergeValidator:
         operation: PlannedOperation,
         on_columns: tuple[str, ...],
         ignore_filetype: bool,
+        schema_evolution: SchemaEvolution,
     ) -> PreparedOperation:
         if operation.target is None:
             return PreparedOperation(
@@ -114,6 +125,7 @@ class MergeValidator:
             target=operation.target,
             on_columns=on_columns,
             ignore_filetype=ignore_filetype,
+            schema_evolution=schema_evolution,
         )
         if validation.conflicting_columns:
             conflict_list = ", ".join(validation.conflicting_columns)
@@ -152,6 +164,7 @@ class MergeValidator:
         operation: PlannedOperation,
         on_columns: tuple[str, ...],
         ignore_filetype: bool,
+        schema_evolution: SchemaEvolution,
     ) -> str | None:
         if operation.kind != "merge" or operation.target is None:
             return None
@@ -162,6 +175,7 @@ class MergeValidator:
                 target=operation.target,
                 on_columns=on_columns,
                 ignore_filetype=ignore_filetype,
+                schema_evolution=schema_evolution,
             )
         except ValueError as error:
             return str(error)
@@ -183,12 +197,20 @@ class MergeValidator:
             except ValueError as error:
                 return str(error)
 
+        target_frame = align_lazyframe_to_schema(
+            scan_dataframe(operation.target), validation.effective_schema
+        )
+        source_frame = align_lazyframe_to_schema(
+            source_frame,
+            validation.effective_schema,
+        )
+
         if not on_columns:
             return None
 
         conflict = self._conflict_detector.find_conflicting_key(
             frame=pl.concat(
-                [scan_dataframe(operation.target), source_frame],
+                [target_frame, source_frame],
                 how="vertical",
             ).unique(maintain_order=True),
             key_columns=on_columns,
@@ -244,16 +266,23 @@ class MergeValidator:
         target: Path,
         on_columns: tuple[str, ...],
         ignore_filetype: bool,
+        schema_evolution: SchemaEvolution,
     ) -> ValidationResult:
         source_schema = scan_dataframe(source).collect_schema()
         target_schema = scan_dataframe(target).collect_schema()
 
-        if list(source_schema.keys()) != list(target_schema.keys()):
+        if schema_evolution == "strict" and list(source_schema.keys()) != list(
+            target_schema.keys()
+        ):
             raise ValueError(
                 f"Schema mismatch between {source} and {target}: column layouts differ"
             )
 
-        missing_keys = [column for column in on_columns if column not in target_schema]
+        missing_keys = [
+            column
+            for column in on_columns
+            if column not in target_schema or column not in source_schema
+        ]
         if missing_keys:
             missing = ", ".join(missing_keys)
             raise ValueError(f"Merge key columns not found in both files: {missing}")
@@ -266,11 +295,28 @@ class MergeValidator:
         )
         conflicting_columns = [
             column
-            for column in target_schema
+            for column in source_schema
+            if column in target_schema
             if source_schema[column] != target_schema[column] and not cast_source
         ]
+
+        if schema_evolution == "strict":
+            effective_schema = target_schema
+        else:
+            effective_schema = pl.Schema(
+                {
+                    **{column: dtype for column, dtype in target_schema.items()},
+                    **{
+                        column: dtype
+                        for column, dtype in source_schema.items()
+                        if column not in target_schema
+                    },
+                }
+            )
+
         return ValidationResult(
             target_schema=target_schema,
+            effective_schema=effective_schema,
             cast_source_to_target_schema=cast_source,
             conflicting_columns=conflicting_columns,
         )

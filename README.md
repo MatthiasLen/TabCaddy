@@ -228,6 +228,12 @@ For file-vs-folder diffs, TabCaddy matches by filename across the folder tree:
 tabcaddy merge <source> <target> (--out <path> | --inplace) [--on COLUMN ...] [--ignore-filetype] [--dry]
 ```
 
+Or with explicit schema evolution mode:
+
+```bash
+tabcaddy merge <source> <target> (--out <path> | --inplace) [--on COLUMN ...] [--ignore-filetype] [--schema-evolution strict|allow-additive] [--dry]
+```
+
 Merge appends source rows onto matching target files and writes the result using the target file layout.
 Use `--dry` to preview matched files, unmatched files, destination paths, schema issues, casts, and expected conflicts without writing anything.
 
@@ -242,6 +248,9 @@ Important behavior:
 - exact duplicate rows are removed after appending
 - `--on` is optional; when provided, merge checks for conflicting duplicate keys after append-and-deduplicate
 - rows with the same key are not updated in place; merge is append plus validation, not an upsert
+- `--schema-evolution strict` is the default and requires matching column layouts
+- `--schema-evolution allow-additive` permits extra columns and fills missing values with nulls
+- `--schema-evolution allow-additive` is not supported with `--ignore-filetype`
 
 How output paths work:
 

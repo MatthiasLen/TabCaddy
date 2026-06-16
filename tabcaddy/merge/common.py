@@ -14,6 +14,7 @@ _BINARY_FILE_SUFFIXES = {".parquet", ".feather", ".arrow"}
 _CSV_SUFFIX = ".csv"
 _FEATHER_ARROW_SUFFIXES = {".feather", ".arrow"}
 MergeOperationKind = Literal["merge", "source_only", "target_passthrough"]
+SchemaEvolution = Literal["strict", "allow-additive"]
 
 
 @dataclass(frozen=True)
@@ -35,6 +36,7 @@ class MatchKey:
 @dataclass(frozen=True)
 class ValidationResult:
     target_schema: pl.Schema
+    effective_schema: pl.Schema
     cast_source_to_target_schema: bool
     conflicting_columns: list[str]
 
@@ -134,6 +136,18 @@ def scan_dataframe(path: Path) -> pl.LazyFrame:
 def cast_lazyframe(frame: pl.LazyFrame, schema: pl.Schema) -> pl.LazyFrame:
     return frame.with_columns(
         pl.col(column).cast(dtype, strict=True) for column, dtype in schema.items()
+    )
+
+
+def align_lazyframe_to_schema(frame: pl.LazyFrame, schema: pl.Schema) -> pl.LazyFrame:
+    frame_schema = frame.collect_schema()
+    return frame.select(
+        (
+            pl.col(column).cast(dtype, strict=True)
+            if column in frame_schema
+            else pl.lit(None, dtype=dtype)
+        ).alias(column)
+        for column, dtype in schema.items()
     )
 
 
