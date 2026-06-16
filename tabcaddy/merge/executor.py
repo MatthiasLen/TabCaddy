@@ -135,16 +135,9 @@ class MergeExecutor:
         if not schema_names:
             return pl.concat([target_frame, source_frame], how="vertical")
 
-        row_hash_expr = pl.struct(schema_names).hash(seed=0).alias("_tabcaddy_row_hash")
-        target_hashes = target_frame.select(row_hash_expr).unique(
-            subset=["_tabcaddy_row_hash"], maintain_order=True
-        )
-        source_additions = (
-            source_frame.with_columns(row_hash_expr)
-            .join(target_hashes, on="_tabcaddy_row_hash", how="anti")
-            .unique(subset=schema_names, maintain_order=True)
-            .drop("_tabcaddy_row_hash")
-        )
+        source_additions = source_frame.join(
+            target_frame, on=schema_names, how="anti", nulls_equal=True
+        ).unique(subset=schema_names, maintain_order=True)
         return pl.concat([target_frame, source_additions], how="vertical")
 
     def _merge_upsert(
