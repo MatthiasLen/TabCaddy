@@ -102,6 +102,7 @@ class TransformDataset:
             if output_file is not None:
                 target = output_file
             else:
+                assert output_root is not None
                 relative_path = (
                     record.relative_path
                     if source.source_type != SourceType.FILE
@@ -129,7 +130,10 @@ class TransformDataset:
                 written_files=written_files,
             )
 
-        return output_file or output_root
+        if output_file is not None:
+            return output_file
+        assert output_root is not None
+        return output_root
 
     def _is_file_output_path(self, output_path: Path) -> bool:
         if output_path.exists():
