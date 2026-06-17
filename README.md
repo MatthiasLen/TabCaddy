@@ -78,6 +78,8 @@ Typical incremental ingest flow (clean, merge, compile):
 ```bash
 tabcaddy scaffold-transform incoming/
 tabcaddy transform incoming/ transform_template.py incoming_cleaned/
+# optional: preview merge plan without writing output
+tabcaddy merge incoming_cleaned/ archive/ --out merged_archive --on id --dry
 tabcaddy merge incoming_cleaned/ archive/ --out merged_archive --on id
 tabcaddy compile merged_archive/ --interactive
 ```
