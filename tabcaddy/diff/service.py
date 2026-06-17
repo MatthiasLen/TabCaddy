@@ -18,7 +18,10 @@ class DiffDatasets:
         self._strategies = {
             (SourceType.FILE, SourceType.FILE): file_differ.diff,
             (SourceType.FOLDER, SourceType.FOLDER): folder_differ.diff,
-            (SourceType.COMPILED_DATASET,SourceType.COMPILED_DATASET): compiled_differ.diff,
+            (
+                SourceType.COMPILED_DATASET,
+                SourceType.COMPILED_DATASET,
+            ): compiled_differ.diff,
             (SourceType.FILE, SourceType.FOLDER): mixed_differ.diff,
             (SourceType.FOLDER, SourceType.FILE): mixed_differ.diff,
         }
