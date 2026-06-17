@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from tabcaddy.diff.common import analyze_pair
 from tabcaddy.diff.comparison import compare_analyses
-from tabcaddy.diff.folder_inventory import build_relative_file_index, diff_folder_inventory
+from tabcaddy.diff.folder_inventory import (
+    build_relative_file_index,
+    diff_folder_inventory,
+)
 from tabcaddy.diff.row_level import compare_rows_by_key
 from tabcaddy.domain.models import (
     DatasetSource,
