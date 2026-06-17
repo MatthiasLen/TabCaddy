@@ -131,6 +131,14 @@ def diff_report_to_dict(report: DiffReport) -> dict[str, Any]:
         "schema_changes": list(report.schema_changes),
         "statistics_changes": list(report.statistics_changes),
         "warnings": list(report.warnings),
+        "row_diff_summary": None
+        if report.row_diff_summary is None
+        else _serialize_value(asdict(report.row_diff_summary)),
+        "row_change_examples": _serialize_value(
+            [asdict(example) for example in report.row_change_examples]
+        ),
+        "row_added_key_samples": _serialize_value(report.row_added_key_samples),
+        "row_removed_key_samples": _serialize_value(report.row_removed_key_samples),
         "summary": None
         if report.summary is None
         else _serialize_value(asdict(report.summary)),

@@ -17,8 +17,19 @@ class CompiledDatasetDiffer:
         self._generate_analysis = generate_analysis
 
     def diff(
-        self, left: DatasetSource, right: DatasetSource, level: DiffLevel
+        self,
+        left: DatasetSource,
+        right: DatasetSource,
+        level: DiffLevel,
+        *,
+        key_columns: tuple[str, ...] = (),
+        row_examples: int = 20,
     ) -> DiffReport:
+        _ = row_examples
+        if key_columns:
+            raise ValueError(
+                "Row-level key diff is not supported for compiled dataset comparisons."
+            )
         left_analysis, right_analysis = analyze_pair(
             self._generate_analysis,
             left,

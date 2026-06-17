@@ -46,6 +46,30 @@ class DiffSummary:
 
 
 @dataclass(frozen=True)
+class RowFieldDelta:
+    column: str
+    left_value: Any | None
+    right_value: Any | None
+
+
+@dataclass(frozen=True)
+class RowChangeExample:
+    key: dict[str, Any]
+    deltas: list[RowFieldDelta]
+    source_path: str | None = None
+
+
+@dataclass(frozen=True)
+class RowDiffSummary:
+    key_columns: list[str]
+    added_rows: int
+    removed_rows: int
+    updated_rows: int
+    unchanged_rows: int
+    compared_files: int = 1
+
+
+@dataclass(frozen=True)
 class DatasetSource:
     path: Path
     source_type: SourceType
@@ -109,3 +133,7 @@ class DiffReport:
     statistics_changes: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     summary: DiffSummary | None = None
+    row_diff_summary: RowDiffSummary | None = None
+    row_change_examples: list[RowChangeExample] = field(default_factory=list)
+    row_added_key_samples: list[dict[str, Any]] = field(default_factory=list)
+    row_removed_key_samples: list[dict[str, Any]] = field(default_factory=list)

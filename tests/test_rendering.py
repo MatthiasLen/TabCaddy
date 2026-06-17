@@ -11,6 +11,9 @@ from tabcaddy.domain.models import DatasetStatistics
 from tabcaddy.domain.models import DiffComparisonType
 from tabcaddy.domain.models import DiffLevel
 from tabcaddy.domain.models import DiffReport
+from tabcaddy.domain.models import RowChangeExample
+from tabcaddy.domain.models import RowDiffSummary
+from tabcaddy.domain.models import RowFieldDelta
 from tabcaddy.domain.models import DiffSummary
 from tabcaddy.domain.models import SchemaSignature
 from tabcaddy.analysis.schema import FileSchemaRecord
@@ -151,3 +154,42 @@ def test_diff_render_shows_match_candidates() -> None:
 
     assert "Match Candidates" in output
     assert "nested/data.csv" in output
+
+
+def test_diff_render_shows_row_level_sections() -> None:
+    report = DiffReport(
+        summary=DiffSummary(
+            comparison_type=DiffComparisonType.FILE,
+            content_status="modified",
+        ),
+        row_diff_summary=RowDiffSummary(
+            key_columns=["customer_id"],
+            added_rows=1,
+            removed_rows=0,
+            updated_rows=1,
+            unchanged_rows=2,
+            compared_files=1,
+        ),
+        row_change_examples=[
+            RowChangeExample(
+                key={"customer_id": 42},
+                deltas=[
+                    RowFieldDelta(
+                        column="status",
+                        left_value="active",
+                        right_value="inactive",
+                    )
+                ],
+            )
+        ],
+        row_added_key_samples=[{"customer_id": 99}],
+    )
+
+    console = create_console(record=True, width=120, legacy_windows=False)
+    console.print(build_diff_view(report, level=DiffLevel.FULL))
+    output = console.export_text()
+
+    assert "Row Diff Summary" in output
+    assert "Updated Rows" in output
+    assert "Added Key Samples" in output
+    assert "customer_id=42" in output

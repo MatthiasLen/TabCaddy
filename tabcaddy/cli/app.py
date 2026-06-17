@@ -157,6 +157,17 @@ def diff(
         "--level",
         help="Comparison depth: metadata (file changes only), statistics (+ column stats), full (+ schema details)",
     ),
+    on: list[str] | None = typer.Option(
+        None,
+        "--on",
+        help="One or more key columns used for row-level explainable diff output.",
+    ),
+    row_examples: int = typer.Option(
+        20,
+        "--row-examples",
+        min=1,
+        help="Maximum number of row-level examples to show per section.",
+    ),
 ) -> None:
     console = create_console()
     render = resolve_render_profile(console)
@@ -164,8 +175,14 @@ def diff(
     try:
         left = Path(left).expanduser().resolve()
         right = Path(right).expanduser().resolve()
+        if level != DiffLevel.FULL and on:
+            raise ValueError("Row-level key diff requires --level full.")
         report = DiffDatasets(generator).run(
-            resolve_source(left), resolve_source(right), level
+            resolve_source(left),
+            resolve_source(right),
+            level,
+            key_columns=tuple(on or ()),
+            row_examples=row_examples,
         )
     except (FileExistsError, FileNotFoundError, ValueError) as error:
         console.print(f"[red]{error}[/red]")

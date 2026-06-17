@@ -282,6 +282,66 @@ def test_diff_command_returns_friendly_error_for_unsupported_combination(
     assert "Unsupported diff source combination" in result.stdout
 
 
+def test_diff_with_keys_shows_row_level_sections(tmp_path: Path) -> None:
+    left = tmp_path / "left.csv"
+    right = tmp_path / "right.csv"
+    _write_csv(
+        left,
+        [
+            {"customer_id": 1, "status": "active"},
+            {"customer_id": 2, "status": "active"},
+        ],
+    )
+    _write_csv(
+        right,
+        [
+            {"customer_id": 1, "status": "active"},
+            {"customer_id": 2, "status": "inactive"},
+            {"customer_id": 3, "status": "active"},
+        ],
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "diff",
+            str(left),
+            str(right),
+            "--level",
+            "full",
+            "--on",
+            "customer_id",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Row Diff Summary" in result.stdout
+    assert "Updated Rows" in result.stdout
+
+
+def test_diff_with_keys_requires_full_level(tmp_path: Path) -> None:
+    left = tmp_path / "left.csv"
+    right = tmp_path / "right.csv"
+    _write_csv(left, [{"customer_id": 1, "status": "active"}])
+    _write_csv(right, [{"customer_id": 1, "status": "inactive"}])
+
+    result = runner.invoke(
+        app,
+        [
+            "diff",
+            str(left),
+            str(right),
+            "--level",
+            "statistics",
+            "--on",
+            "customer_id",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "Row-level key diff requires --level full" in result.stdout
+
+
 def test_nested_parquet_columns_do_not_crash_summary_diff_or_compile(
     tmp_path: Path,
 ) -> None:
