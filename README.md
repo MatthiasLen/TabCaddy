@@ -235,7 +235,7 @@ def transform(df, context):
 `diff`
 
 ```bash
-tabcaddy diff <left> <right> [--level metadata|statistics|full]
+tabcaddy diff <left> <right> [--level metadata|statistics|full] [--on COLUMN ...] [--row-examples N]
 ```
 
 Supported comparisons:
@@ -258,7 +258,21 @@ Levels:
 
 - `metadata`: high-level file and dataset changes
 - `statistics`: metadata plus column-stat changes
-- `full`: metadata, schema, and statistics changes
+- `full`: metadata, schema, statistics, and optional key-aware row-level explainability
+
+Key-aware row-level explainability (full level):
+
+- provide one or more `--on` columns to compare records by business key
+- output includes row counts by class: added, removed, updated, unchanged
+- output includes updated-row examples showing key values and field-level before/after deltas
+- `--row-examples` limits displayed examples while preserving aggregate counts
+- key columns must exist on both sides and be unique per side for row-level comparison
+
+Example:
+
+```bash
+tabcaddy diff customer_left.csv customer_right.csv --level full --on customer_id --row-examples 25
+```
 
 `merge`
 

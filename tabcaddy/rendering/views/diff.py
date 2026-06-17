@@ -37,6 +37,34 @@ def build_diff_view(
         sections.append(("Schema Changes", report.schema_changes, "blue"))
     if level in {DiffLevel.STATISTICS, DiffLevel.FULL}:
         sections.append(("Statistics Changes", report.statistics_changes, "green"))
+
+    row_summary_lines = _build_row_summary_lines(report)
+    if row_summary_lines:
+        sections.append(("Row Diff Summary", row_summary_lines, "magenta"))
+
+    updated_row_lines = _build_updated_row_lines(
+        report,
+        ascii_only=render.ascii_only,
+    )
+    if updated_row_lines:
+        sections.append(("Updated Rows", updated_row_lines, "blue"))
+
+    added_key_lines = _build_key_sample_lines(
+        report.row_added_key_samples,
+        title="added",
+        ascii_only=render.ascii_only,
+    )
+    if added_key_lines:
+        sections.append(("Added Key Samples", added_key_lines, "green"))
+
+    removed_key_lines = _build_key_sample_lines(
+        report.row_removed_key_samples,
+        title="removed",
+        ascii_only=render.ascii_only,
+    )
+    if removed_key_lines:
+        sections.append(("Removed Key Samples", removed_key_lines, "yellow"))
+
     sections.append(("Warnings", report.warnings, "yellow"))
 
     visible_sections = [section for section in sections if section[1]]
@@ -71,6 +99,16 @@ def _is_clean_diff(report: DiffReport) -> bool:
             summary.modified_files,
             summary.only_in_left,
             summary.only_in_right,
+        )
+    ):
+        return False
+    row_summary = report.row_diff_summary
+    if row_summary is not None and any(
+        value > 0
+        for value in (
+            row_summary.added_rows,
+            row_summary.removed_rows,
+            row_summary.updated_rows,
         )
     ):
         return False
@@ -116,3 +154,59 @@ def _build_section(
         title=title,
         border_style=color,
     )
+
+
+def _build_row_summary_lines(report: DiffReport) -> list[str]:
+    summary = report.row_diff_summary
+    if summary is None:
+        return []
+    return [
+        f"Keys: {', '.join(summary.key_columns)}",
+        f"Compared Files: {summary.compared_files}",
+        f"Added Rows: {summary.added_rows}",
+        f"Removed Rows: {summary.removed_rows}",
+        f"Updated Rows: {summary.updated_rows}",
+        f"Unchanged Rows: {summary.unchanged_rows}",
+    ]
+
+
+def _value_repr(value: object, *, ascii_only: bool) -> str:
+    return ascii(value) if ascii_only else repr(value)
+
+
+def _build_updated_row_lines(
+    report: DiffReport,
+    *,
+    ascii_only: bool,
+) -> list[str]:
+    lines: list[str] = []
+    for example in report.row_change_examples:
+        key_repr = ", ".join(
+            f"{key}={_value_repr(value, ascii_only=ascii_only)}"
+            for key, value in example.key.items()
+        )
+        delta_repr = ", ".join(
+            f"{delta.column}: "
+            f"{_value_repr(delta.left_value, ascii_only=ascii_only)} -> "
+            f"{_value_repr(delta.right_value, ascii_only=ascii_only)}"
+            for delta in example.deltas
+        )
+        prefix = f"[{example.source_path}] " if example.source_path else ""
+        lines.append(f"{prefix}{key_repr} | {delta_repr}")
+    return lines
+
+
+def _build_key_sample_lines(
+    keys: list[dict[str, object]],
+    *,
+    title: str,
+    ascii_only: bool,
+) -> list[str]:
+    return [
+        f"{title}: "
+        + ", ".join(
+            f"{key}={_value_repr(value, ascii_only=ascii_only)}"
+            for key, value in entry.items()
+        )
+        for entry in keys
+    ]

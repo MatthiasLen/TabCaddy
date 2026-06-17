@@ -3,6 +3,7 @@ from __future__ import annotations
 from tabcaddy.diff.common import analyze_pair
 from tabcaddy.diff.comparison import compare_analyses
 from tabcaddy.diff.matching import MatchStatus, resolve_file_folder_match
+from tabcaddy.diff.row_level import compare_rows_by_key
 from tabcaddy.domain.models import (
     DatasetSource,
     DiffComparisonType,
@@ -18,7 +19,13 @@ class MixedDiffer:
         self._generate_analysis = generate_analysis
 
     def diff(
-        self, left: DatasetSource, right: DatasetSource, level: DiffLevel
+        self,
+        left: DatasetSource,
+        right: DatasetSource,
+        level: DiffLevel,
+        *,
+        key_columns: tuple[str, ...] = (),
+        row_examples: int = 20,
     ) -> DiffReport:
         file_source, folder_source = self._split_sources(left, right)
         match = resolve_file_folder_match(file_source, folder_source)
@@ -77,6 +84,24 @@ class MixedDiffer:
             match_status=MatchStatus.MODIFIED.value,
             matched_path=match.matched_path,
         )
+        if key_columns:
+            if left.source_type == SourceType.FILE:
+                row_left_path = left.path
+                row_right_path = matched_source.path
+            else:
+                row_left_path = matched_source.path
+                row_right_path = right.path
+            row_result = compare_rows_by_key(
+                row_left_path,
+                row_right_path,
+                key_columns,
+                max_examples=row_examples,
+                source_path=match.matched_path,
+            )
+            report.row_diff_summary = row_result.summary
+            report.row_change_examples = row_result.updated_examples
+            report.row_added_key_samples = row_result.added_key_samples
+            report.row_removed_key_samples = row_result.removed_key_samples
         return report
 
     def _split_sources(

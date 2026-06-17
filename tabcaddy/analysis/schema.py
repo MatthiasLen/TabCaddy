@@ -63,6 +63,7 @@ class SchemaAnalyzer:
         grouped: dict[str, dict[str, object]] = {}
         records: list[FileSchemaRecord] = []
         warnings: list[str] = []
+        failed: list[tuple[Path, Exception]] = []
         for path in tqdm(files, desc="Running schema analysis", unit="files"):
             try:
                 scan = scan_dataframe(path)
@@ -92,8 +93,22 @@ class SchemaAnalyzer:
                 if schema_hash not in grouped:
                     grouped[schema_hash] = {"columns": columns, "count": 0}
                 grouped[schema_hash]["count"] = int(grouped[schema_hash]["count"]) + 1
-            except Exception as exc:
+            except (
+                OSError,
+                TypeError,
+                ValueError,
+                pl.exceptions.PolarsError,
+            ) as exc:
+                failed.append((path, exc))
                 warnings.append(f"Failed to inspect {path.name}: {exc}")
+
+        if files and not records:
+            failed_path, failed_error = failed[0]
+            raise ValueError(
+                "Failed to inspect any dataset files. "
+                f"First failure: {failed_path.name}: {failed_error}"
+            )
+
         schemas = [
             SchemaSignature(
                 columns=value["columns"],

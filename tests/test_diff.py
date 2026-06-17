@@ -349,3 +349,156 @@ def test_diff_report_to_dict_includes_summary_payload() -> None:
         "only_in_left": None,
         "only_in_right": None,
     }
+
+
+def test_file_diff_reports_row_level_changes_with_keys(tmp_path: Path) -> None:
+    left = tmp_path / "left.csv"
+    right = tmp_path / "right.csv"
+    pl.DataFrame(
+        {
+            "customer_id": [1, 2],
+            "status": ["active", "active"],
+            "balance": [10.0, 20.0],
+        }
+    ).write_csv(left)
+    pl.DataFrame(
+        {
+            "customer_id": [1, 2, 3],
+            "status": ["active", "inactive", "active"],
+            "balance": [10.0, 25.0, 40.0],
+        }
+    ).write_csv(right)
+
+    report = DiffDatasets(GenerateAnalysis()).run(
+        resolve_source(left),
+        resolve_source(right),
+        DiffLevel.FULL,
+        key_columns=("customer_id",),
+        row_examples=10,
+    )
+
+    assert report.row_diff_summary is not None
+    assert report.row_diff_summary.added_rows == 1
+    assert report.row_diff_summary.removed_rows == 0
+    assert report.row_diff_summary.updated_rows == 1
+    assert report.row_diff_summary.unchanged_rows == 1
+    assert report.row_added_key_samples == [{"customer_id": 3}]
+    assert report.row_removed_key_samples == []
+    assert len(report.row_change_examples) == 1
+    assert report.row_change_examples[0].key == {"customer_id": 2}
+
+
+def test_file_diff_row_level_requires_unique_keys(tmp_path: Path) -> None:
+    left = tmp_path / "left.csv"
+    right = tmp_path / "right.csv"
+    pl.DataFrame(
+        {
+            "customer_id": [1, 1],
+            "status": ["active", "inactive"],
+        }
+    ).write_csv(left)
+    pl.DataFrame({"customer_id": [1], "status": ["active"]}).write_csv(right)
+
+    try:
+        DiffDatasets(GenerateAnalysis()).run(
+            resolve_source(left),
+            resolve_source(right),
+            DiffLevel.FULL,
+            key_columns=("customer_id",),
+        )
+        assert False, "Expected ValueError for duplicate key rows"
+    except ValueError as error:
+        assert "Duplicate key rows detected" in str(error)
+
+
+def test_diff_report_to_dict_includes_row_level_payload() -> None:
+    report = DiffReport(
+        row_diff_summary=None,
+        row_change_examples=[],
+        row_added_key_samples=[],
+        row_removed_key_samples=[],
+    )
+
+    payload = diff_report_to_dict(report)
+
+    assert "row_diff_summary" in payload
+    assert "row_change_examples" in payload
+    assert "row_added_key_samples" in payload
+    assert "row_removed_key_samples" in payload
+
+
+def test_file_diff_row_level_treats_matching_nan_as_unchanged(tmp_path: Path) -> None:
+    left = tmp_path / "left.csv"
+    right = tmp_path / "right.csv"
+    pl.DataFrame(
+        {
+            "customer_id": [1, 2],
+            "score": [math.nan, 10.0],
+        }
+    ).write_csv(left)
+    pl.DataFrame(
+        {
+            "customer_id": [1, 2],
+            "score": [math.nan, 10.0],
+        }
+    ).write_csv(right)
+
+    report = DiffDatasets(GenerateAnalysis()).run(
+        resolve_source(left),
+        resolve_source(right),
+        DiffLevel.FULL,
+        key_columns=("customer_id",),
+    )
+
+    assert report.row_diff_summary is not None
+    assert report.row_diff_summary.updated_rows == 0
+    assert report.row_diff_summary.unchanged_rows == 2
+    assert report.row_change_examples == []
+
+
+def test_folder_diff_row_level_aggregates_across_matching_files(tmp_path: Path) -> None:
+    left = tmp_path / "left"
+    right = tmp_path / "right"
+    left.mkdir()
+    right.mkdir()
+
+    pl.DataFrame(
+        {
+            "customer_id": [1, 2],
+            "status": ["active", "active"],
+        }
+    ).write_csv(left / "a.csv")
+    pl.DataFrame(
+        {
+            "customer_id": [1, 2],
+            "status": ["active", "inactive"],
+        }
+    ).write_csv(right / "a.csv")
+
+    pl.DataFrame(
+        {
+            "customer_id": [10],
+            "status": ["active"],
+        }
+    ).write_csv(left / "b.csv")
+    pl.DataFrame(
+        {
+            "customer_id": [10, 11],
+            "status": ["active", "active"],
+        }
+    ).write_csv(right / "b.csv")
+
+    report = DiffDatasets(GenerateAnalysis()).run(
+        resolve_source(left),
+        resolve_source(right),
+        DiffLevel.FULL,
+        key_columns=("customer_id",),
+        row_examples=5,
+    )
+
+    assert report.row_diff_summary is not None
+    assert report.row_diff_summary.compared_files == 2
+    assert report.row_diff_summary.added_rows == 1
+    assert report.row_diff_summary.updated_rows == 1
+    assert report.row_diff_summary.removed_rows == 0
+    assert report.row_diff_summary.unchanged_rows == 2

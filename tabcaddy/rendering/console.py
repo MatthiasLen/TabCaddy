@@ -9,7 +9,37 @@ from typing import Any
 from rich import box
 from rich.console import Console
 from rich.panel import Panel
+from rich.segment import Segment
 from rich.table import Table
+
+
+class SafeConsole(Console):
+    def print(self, *objects: Any, **kwargs: Any) -> None:
+        try:
+            super().print(*objects, **kwargs)
+        except UnicodeEncodeError:
+            stream = getattr(self, "file", sys.stdout)
+            encoding = getattr(stream, "encoding", None) or "utf-8"
+            sep = str(kwargs.get("sep", " "))
+            end = str(kwargs.get("end", "\n"))
+            rendered_parts: list[str] = []
+            for obj in objects:
+                try:
+                    segments = self.render(obj, options=self.options)
+                    plain = "".join(
+                        segment.text for segment in Segment.strip_styles(segments)
+                    )
+                except Exception:
+                    plain = str(obj)
+                rendered_parts.append(plain)
+            raw = sep.join(rendered_parts) + end
+            safe_text = raw.encode(encoding, errors="replace").decode(
+                encoding, errors="replace"
+            )
+            stream.write(safe_text)
+            flush = getattr(stream, "flush", None)
+            if callable(flush):
+                flush()
 
 
 def create_console(
@@ -25,7 +55,7 @@ def create_console(
     }
     if legacy_windows is not None:
         options["legacy_windows"] = legacy_windows
-    return Console(**options)
+    return SafeConsole(**options)
 
 
 @dataclass(frozen=True)
