@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import polars as pl
@@ -17,6 +18,51 @@ def _write_csv(path: Path, rows: list[dict]) -> None:
 
 def _write_nested_parquet(path: Path, rows: list[dict]) -> None:
     pl.DataFrame(rows).write_parquet(path)
+
+
+def _write_compiled_dataset(
+    root: Path,
+    frame: pl.DataFrame,
+    *,
+    source: str = "fixture-source",
+) -> None:
+    data_dir = root / "data"
+    data_dir.mkdir(parents=True)
+    part_path = data_dir / "part-001.parquet"
+    frame.write_parquet(part_path)
+
+    metadata = {
+        "metadata": {
+            "version": 1,
+            "created_at": "2026-01-01T00:00:00+00:00",
+            "row_count": 2,
+            "column_count": len(frame.columns),
+            "source_file_count": 1,
+            "schema_hash": "schema-1",
+            "column_hashes": {
+                column: f"hash-{index}"
+                for index, column in enumerate(frame.columns, start=1)
+            },
+        },
+        "schemas": [
+            {
+                "columns": [
+                    {"name": name, "dtype": str(dtype)}
+                    for name, dtype in frame.schema.items()
+                ],
+                "hash": "schema-1",
+                "occurrence_count": 1,
+            }
+        ],
+        "statistics": None,
+        "warnings": [],
+        "compiled": {
+            "source": source,
+            "selected_schema_hash": "schema-1",
+            "written_parts": ["data/part-001.parquet"],
+        },
+    }
+    (root / "metadata.json").write_text(json.dumps(metadata), encoding="utf-8")
 
 
 def test_summary_and_schema_commands(tmp_path: Path) -> None:
@@ -340,6 +386,116 @@ def test_diff_with_keys_requires_full_level(tmp_path: Path) -> None:
 
     assert result.exit_code == 1
     assert "Row-level key diff requires --level full" in result.stdout
+
+
+def test_diff_row_key_dtype_mismatch_int_vs_str_returns_friendly_error(
+    tmp_path: Path,
+) -> None:
+    left = tmp_path / "left.parquet"
+    right = tmp_path / "right.parquet"
+    pl.DataFrame({"id": [1, 2], "v": [10, 20]}).write_parquet(left)
+    pl.DataFrame({"id": ["1", "2"], "v": [10, 20]}).write_parquet(right)
+
+    result = runner.invoke(
+        app,
+        ["diff", str(left), str(right), "--level", "full", "--on", "id"],
+    )
+
+    assert result.exit_code == 1
+    assert "incompatible key column types" in result.stdout.lower()
+    assert "traceback" not in result.stdout.lower()
+
+
+def test_diff_row_key_dtype_mismatch_date_vs_str_returns_friendly_error(
+    tmp_path: Path,
+) -> None:
+    left = tmp_path / "left.parquet"
+    right = tmp_path / "right.parquet"
+    pl.DataFrame({"id": ["2024-01-01", "2024-01-02"], "v": [10, 20]}).with_columns(
+        pl.col("id").str.to_date()
+    ).write_parquet(left)
+    pl.DataFrame({"id": ["2024-01-01", "2024-01-02"], "v": [10, 20]}).write_parquet(
+        right
+    )
+
+    result = runner.invoke(
+        app,
+        ["diff", str(left), str(right), "--level", "full", "--on", "id"],
+    )
+
+    assert result.exit_code == 1
+    assert "incompatible key column types" in result.stdout.lower()
+    assert "traceback" not in result.stdout.lower()
+
+
+def test_diff_duplicate_on_arguments_returns_friendly_error(tmp_path: Path) -> None:
+    left = tmp_path / "left.csv"
+    right = tmp_path / "right.csv"
+    _write_csv(left, [{"id": 1, "v": 10}, {"id": 2, "v": 20}])
+    _write_csv(right, [{"id": 1, "v": 11}, {"id": 2, "v": 21}])
+
+    result = runner.invoke(
+        app,
+        [
+            "diff",
+            str(left),
+            str(right),
+            "--level",
+            "full",
+            "--on",
+            "id",
+            "--on",
+            "id",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "duplicate key columns" in result.stdout.lower()
+    assert "traceback" not in result.stdout.lower()
+
+
+def test_diff_malformed_csv_returns_friendly_error(tmp_path: Path) -> None:
+    left = tmp_path / "left.csv"
+    right = tmp_path / "right.csv"
+    _write_csv(left, [{"id": 1, "v": 10}, {"id": 2, "v": 20}])
+    right.write_bytes(b"id,v\n1,10\n2,\xff\n")
+
+    result = runner.invoke(app, ["diff", str(left), str(right), "--level", "full"])
+
+    assert result.exit_code == 1
+    assert "failed to read input data" in result.stdout.lower()
+    assert "traceback" not in result.stdout.lower()
+
+
+def test_diff_compiled_same_metadata_but_different_data_detects_changes(
+    tmp_path: Path,
+) -> None:
+    left = tmp_path / "left_compiled"
+    right = tmp_path / "right_compiled"
+
+    _write_compiled_dataset(left, pl.DataFrame({"id": [1, 2], "v": [10, 20]}))
+    _write_compiled_dataset(right, pl.DataFrame({"id": [1, 2], "v": [10, 99]}))
+
+    result = runner.invoke(app, ["diff", str(left), str(right), "--level", "full"])
+
+    assert result.exit_code == 0
+    assert "No differences detected." not in result.stdout
+    assert "Modified file:" in result.stdout
+
+
+def test_diff_compiled_corrupted_part_is_not_reported_as_clean(tmp_path: Path) -> None:
+    left = tmp_path / "left_compiled"
+    right = tmp_path / "right_compiled"
+
+    _write_compiled_dataset(left, pl.DataFrame({"id": [1, 2], "v": [10, 20]}))
+    _write_compiled_dataset(right, pl.DataFrame({"id": [1, 2], "v": [10, 20]}))
+    (right / "data" / "part-001.parquet").write_bytes(b"not-a-valid-parquet")
+
+    result = runner.invoke(app, ["diff", str(left), str(right), "--level", "full"])
+
+    assert result.exit_code == 0
+    assert "No differences detected." not in result.stdout
+    assert "Modified file:" in result.stdout
 
 
 def test_nested_parquet_columns_do_not_crash_summary_diff_or_compile(

@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Literal
 
+import polars as pl
 import typer
 
 from tabcaddy.analysis import AnalysisBuilder, GenerateAnalysis, resolve_source
@@ -184,6 +185,9 @@ def diff(
             key_columns=tuple(on or ()),
             row_examples=row_examples,
         )
+    except pl.exceptions.PolarsError as error:
+        console.print(f"[red]Failed to read input data for diff: {error}[/red]")
+        raise typer.Exit(code=1) from error
     except (FileExistsError, FileNotFoundError, ValueError) as error:
         console.print(f"[red]{error}[/red]")
         raise typer.Exit(code=1) from error

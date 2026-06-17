@@ -3,6 +3,7 @@ from __future__ import annotations
 from tabcaddy.diff.common import analyze_pair
 from tabcaddy.diff.compiled_metadata import load_compiled_provenance
 from tabcaddy.diff.comparison import compare_analyses
+from tabcaddy.diff.folder_inventory import diff_folder_inventory
 from tabcaddy.domain.models import (
     DatasetSource,
     DiffComparisonType,
@@ -30,6 +31,7 @@ class CompiledDatasetDiffer:
             raise ValueError(
                 "Row-level key diff is not supported for compiled dataset comparisons."
             )
+        inventory = diff_folder_inventory(left, right)
         left_analysis, right_analysis = analyze_pair(
             self._generate_analysis,
             left,
@@ -37,7 +39,19 @@ class CompiledDatasetDiffer:
             level,
         )
         report = compare_analyses(left_analysis, right_analysis, level)
+        for file_name in inventory.added_files:
+            report.file_changes.append(f"Added file: {file_name}")
+        for file_name in inventory.removed_files:
+            report.file_changes.append(f"Removed file: {file_name}")
+        for file_name in inventory.modified_files:
+            report.file_changes.append(f"Modified file: {file_name}")
         if load_compiled_provenance(left) != load_compiled_provenance(right):
             report.metadata_changes.append("Compiled dataset provenance changed")
-        report.summary = DiffSummary(comparison_type=DiffComparisonType.COMPILED)
+        report.summary = DiffSummary(
+            comparison_type=DiffComparisonType.COMPILED,
+            matching_files=inventory.matching_files,
+            modified_files=len(inventory.modified_files),
+            only_in_left=inventory.only_in_left,
+            only_in_right=inventory.only_in_right,
+        )
         return report

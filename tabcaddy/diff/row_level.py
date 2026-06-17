@@ -29,6 +29,7 @@ def compare_rows_by_key(
 ) -> RowDiffResult:
     if not key_columns:
         raise ValueError("Row-level diff requires at least one key column.")
+    _validate_unique_keys(key_columns)
 
     left = _scan_frame(left_path)
     right = _scan_frame(right_path)
@@ -42,6 +43,7 @@ def compare_rows_by_key(
         left_path,
         right_path,
     )
+    _validate_key_dtypes(left_schema, right_schema, key_columns)
     _raise_on_duplicate_keys(left, key_columns, left_path)
     _raise_on_duplicate_keys(right, key_columns, right_path)
 
@@ -162,6 +164,38 @@ def _validate_keys_exist(
         "Missing key columns for row-level diff. "
         f"left={left_path}: {left_missing or 'none'}, "
         f"right={right_path}: {right_missing or 'none'}"
+    )
+
+
+def _validate_unique_keys(key_columns: tuple[str, ...]) -> None:
+    duplicates: list[str] = []
+    seen: set[str] = set()
+    for column in key_columns:
+        if column in seen and column not in duplicates:
+            duplicates.append(column)
+        seen.add(column)
+    if not duplicates:
+        return
+    raise ValueError(
+        "Duplicate key columns for row-level diff: " + ", ".join(duplicates)
+    )
+
+
+def _validate_key_dtypes(
+    left_schema: pl.Schema,
+    right_schema: pl.Schema,
+    key_columns: tuple[str, ...],
+) -> None:
+    mismatches: list[str] = []
+    for column in key_columns:
+        left_dtype = left_schema.get(column)
+        right_dtype = right_schema.get(column)
+        if left_dtype != right_dtype:
+            mismatches.append(f"{column}: {left_dtype} vs {right_dtype}")
+    if not mismatches:
+        return
+    raise ValueError(
+        "Incompatible key column types for row-level diff: " + "; ".join(mismatches)
     )
 
 
