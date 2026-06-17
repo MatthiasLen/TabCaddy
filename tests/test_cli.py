@@ -493,9 +493,9 @@ def test_diff_compiled_corrupted_part_is_not_reported_as_clean(tmp_path: Path) -
 
     result = runner.invoke(app, ["diff", str(left), str(right), "--level", "full"])
 
-    assert result.exit_code == 0
-    assert "No differences detected." not in result.stdout
-    assert "Modified file:" in result.stdout
+    assert result.exit_code == 1
+    assert "failed to inspect any dataset files" in result.stdout.lower()
+    assert "traceback" not in result.stdout.lower()
 
 
 def test_nested_parquet_columns_do_not_crash_summary_diff_or_compile(

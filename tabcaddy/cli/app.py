@@ -186,10 +186,10 @@ def diff(
             row_examples=row_examples,
         )
     except pl.exceptions.PolarsError as error:
-        console.print(f"[red]Failed to read input data for diff: {error}[/red]")
+        console.print(f"Failed to read input data for diff: {error}")
         raise typer.Exit(code=1) from error
     except (FileExistsError, FileNotFoundError, ValueError) as error:
-        console.print(f"[red]{error}[/red]")
+        console.print(str(error))
         raise typer.Exit(code=1) from error
 
     console.print(build_diff_view(report, level=level, render=render))

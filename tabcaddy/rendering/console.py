@@ -12,6 +12,25 @@ from rich.panel import Panel
 from rich.table import Table
 
 
+class SafeConsole(Console):
+    def print(self, *objects: Any, **kwargs: Any) -> None:
+        try:
+            super().print(*objects, **kwargs)
+        except UnicodeEncodeError:
+            stream = getattr(self, "file", sys.stdout)
+            encoding = getattr(stream, "encoding", None) or "utf-8"
+            sep = kwargs.get("sep", " ")
+            end = kwargs.get("end", "\n")
+            raw = sep.join(str(obj) for obj in objects)
+            safe_text = raw.encode(encoding, errors="replace").decode(
+                encoding, errors="replace"
+            )
+            stream.write(safe_text + end)
+            flush = getattr(stream, "flush", None)
+            if callable(flush):
+                flush()
+
+
 def create_console(
     *,
     record: bool = False,
@@ -25,7 +44,7 @@ def create_console(
     }
     if legacy_windows is not None:
         options["legacy_windows"] = legacy_windows
-    return Console(**options)
+    return SafeConsole(**options)
 
 
 @dataclass(frozen=True)

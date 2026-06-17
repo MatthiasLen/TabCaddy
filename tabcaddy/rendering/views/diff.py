@@ -42,13 +42,17 @@ def build_diff_view(
     if row_summary_lines:
         sections.append(("Row Diff Summary", row_summary_lines, "magenta"))
 
-    updated_row_lines = _build_updated_row_lines(report)
+    updated_row_lines = _build_updated_row_lines(
+        report,
+        ascii_only=render.ascii_only,
+    )
     if updated_row_lines:
         sections.append(("Updated Rows", updated_row_lines, "blue"))
 
     added_key_lines = _build_key_sample_lines(
         report.row_added_key_samples,
         title="added",
+        ascii_only=render.ascii_only,
     )
     if added_key_lines:
         sections.append(("Added Key Samples", added_key_lines, "green"))
@@ -56,6 +60,7 @@ def build_diff_view(
     removed_key_lines = _build_key_sample_lines(
         report.row_removed_key_samples,
         title="removed",
+        ascii_only=render.ascii_only,
     )
     if removed_key_lines:
         sections.append(("Removed Key Samples", removed_key_lines, "yellow"))
@@ -165,12 +170,25 @@ def _build_row_summary_lines(report: DiffReport) -> list[str]:
     ]
 
 
-def _build_updated_row_lines(report: DiffReport) -> list[str]:
+def _value_repr(value: object, *, ascii_only: bool) -> str:
+    return ascii(value) if ascii_only else repr(value)
+
+
+def _build_updated_row_lines(
+    report: DiffReport,
+    *,
+    ascii_only: bool,
+) -> list[str]:
     lines: list[str] = []
     for example in report.row_change_examples:
-        key_repr = ", ".join(f"{k}={v!r}" for k, v in example.key.items())
+        key_repr = ", ".join(
+            f"{key}={_value_repr(value, ascii_only=ascii_only)}"
+            for key, value in example.key.items()
+        )
         delta_repr = ", ".join(
-            f"{delta.column}: {delta.left_value!r} -> {delta.right_value!r}"
+            f"{delta.column}: "
+            f"{_value_repr(delta.left_value, ascii_only=ascii_only)} -> "
+            f"{_value_repr(delta.right_value, ascii_only=ascii_only)}"
             for delta in example.deltas
         )
         prefix = f"[{example.source_path}] " if example.source_path else ""
@@ -182,8 +200,13 @@ def _build_key_sample_lines(
     keys: list[dict[str, object]],
     *,
     title: str,
+    ascii_only: bool,
 ) -> list[str]:
     return [
-        f"{title}: " + ", ".join(f"{k}={v!r}" for k, v in entry.items())
+        f"{title}: "
+        + ", ".join(
+            f"{key}={_value_repr(value, ascii_only=ascii_only)}"
+            for key, value in entry.items()
+        )
         for entry in keys
     ]
