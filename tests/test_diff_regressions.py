@@ -111,7 +111,9 @@ def test_diff_ascii_render_profile_escapes_unicode_row_values() -> None:
     assert "\\U0001f643" in text
 
 
-def test_diff_file_with_corrupted_parquet_fails_without_row_keys(tmp_path: Path) -> None:
+def test_diff_file_with_corrupted_parquet_fails_without_row_keys(
+    tmp_path: Path,
+) -> None:
     left = tmp_path / "left.parquet"
     right = tmp_path / "right.parquet"
     pl.DataFrame({"id": [1, 2], "v": [10, 20]}).write_parquet(left)
