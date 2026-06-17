@@ -84,6 +84,53 @@ tabcaddy compile merged_archive/ --interactive
 
 Note: compiling before transforming is still useful when you want to lock onto one schema first, or when the transform input is already a compiled dataset.
 
+### Transform Workflow Example
+
+If you are using `scaffold-transform` and `transform` for the first time, the usual loop is:
+
+1. generate a starter script from the source you want to clean
+2. replace the scaffold examples with your own Polars logic
+3. run the transform over the file, folder, or compiled dataset
+4. inspect or compile the transformed output
+
+Start by generating a scaffold from the raw folder:
+
+```bash
+tabcaddy scaffold-transform source_data/ --output transform_source_data.py
+```
+
+The generated file includes observed schema comments and several ready-to-edit Polars examples. A typical edited transform looks like this:
+
+
+```python
+import polars as pl
+
+def transform(df: pl.DataFrame, context=None) -> pl.DataFrame:
+    # In this example, the transformation fills missing `status` values, casts
+    # `amount` to a numeric type, and adds the source filename as a new column.
+
+    if "status" in df.columns:
+        df = df.with_columns(pl.col("status").fill_null("unknown"))
+
+    if "amount" in df.columns:
+        df = df.with_columns(pl.col("amount").cast(pl.Float64))
+
+    if context is not None:
+        df = df.with_columns(pl.lit(context.file_name).alias("SOURCE_FILE"))
+
+    return df
+```
+
+Then apply it and inspect the result:
+
+```bash
+tabcaddy transform source_data/ transform_source_data.py transformed_data/ --workers 4
+tabcaddy summary transformed_data/
+tabcaddy head transformed_data/ --n 5
+```
+
+If you omit `transformed_data/`, TabCaddy creates a sibling output path with `_transformed` appended automatically.
+
 ### Command Reference
 
 `summary`
@@ -146,6 +193,10 @@ tabcaddy scaffold-transform <source> [--output transform_template.py]
 
 Generates a Python transform scaffold based on observed schemas.
 
+- output is a ready-to-edit Python file that uses Polars
+- the scaffold includes comments for each observed schema group and example transforms
+- a good default pattern is: scaffold once, edit the script, then run `tabcaddy transform`
+
 `transform`
 
 ```bash
@@ -156,6 +207,8 @@ Applies a Python transform to a file, folder, or compiled dataset.
 
 - if `output_path` is omitted, TabCaddy creates one by appending `_transformed`
 - compiled input produces compiled output with refreshed `metadata.json` and `data/`
+- folder and compiled inputs can use `--workers N` for parallel execution
+- for single-file input, `output_path` may be a file path such as `cleaned.csv`
 
 Supported signatures:
 
@@ -173,7 +226,7 @@ def transform(df, context):
 
 - `file_name`
 - `file_path`
-- `schema`
+- `schema` (list of `{name, dtype}` entries)
 - `metadata.row_count`
 - `metadata.schema_hash`
 
