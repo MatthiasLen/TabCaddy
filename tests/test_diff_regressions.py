@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 import polars as pl
 from rich.console import Console
+from rich.panel import Panel
 from typer.testing import CliRunner
 
 from tabcaddy.cli.app import app
@@ -79,6 +80,24 @@ def test_diff_safe_console_output_falls_back_on_encoding_errors() -> None:
     stream.flush()
     text = buffer.getvalue().decode("cp1252")
     assert "Failed ? to render" in text
+
+
+def test_diff_safe_console_fallback_renders_rich_objects() -> None:
+    buffer = io.BytesIO()
+    stream = io.TextIOWrapper(buffer, encoding="cp1252")
+
+    console = SafeConsole(file=stream, force_terminal=False, color_system=None)
+    panel = Panel("Panel π payload", title="demo")
+    with patch.object(
+        Console,
+        "print",
+        side_effect=UnicodeEncodeError("cp1252", "π", 0, 1, "cannot encode"),
+    ):
+        console.print(panel)
+
+    stream.flush()
+    text = buffer.getvalue().decode("cp1252")
+    assert "Panel ? payload" in text
 
 
 def test_diff_ascii_render_profile_escapes_unicode_row_values() -> None:

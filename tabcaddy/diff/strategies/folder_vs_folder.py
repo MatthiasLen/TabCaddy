@@ -74,11 +74,22 @@ class FolderDiffer:
             unchanged_rows = 0
 
             for relative_path in common_paths:
+                remaining_examples = row_examples - len(report.row_change_examples)
+                remaining_added = row_examples - len(report.row_added_key_samples)
+                remaining_removed = row_examples - len(report.row_removed_key_samples)
+                # Use the largest remaining section budget so each per-file diff only
+                # materializes as many examples as can still be surfaced globally.
+                sample_budget = max(
+                    0,
+                    remaining_examples,
+                    remaining_added,
+                    remaining_removed,
+                )
                 result = compare_rows_by_key(
                     left_index[relative_path],
                     right_index[relative_path],
                     key_columns,
-                    max_examples=row_examples,
+                    max_examples=sample_budget,
                     source_path=relative_path,
                 )
                 compared_files += 1
@@ -87,19 +98,16 @@ class FolderDiffer:
                 updated_rows += result.summary.updated_rows
                 unchanged_rows += result.summary.unchanged_rows
 
-                remaining_examples = row_examples - len(report.row_change_examples)
                 if remaining_examples > 0:
                     report.row_change_examples.extend(
                         result.updated_examples[:remaining_examples]
                     )
 
-                remaining_added = row_examples - len(report.row_added_key_samples)
                 if remaining_added > 0:
                     report.row_added_key_samples.extend(
                         result.added_key_samples[:remaining_added]
                     )
 
-                remaining_removed = row_examples - len(report.row_removed_key_samples)
                 if remaining_removed > 0:
                     report.row_removed_key_samples.extend(
                         result.removed_key_samples[:remaining_removed]

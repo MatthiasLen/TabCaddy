@@ -35,7 +35,7 @@ def _write_compiled_dataset(
         "metadata": {
             "version": 1,
             "created_at": "2026-01-01T00:00:00+00:00",
-            "row_count": 2,
+            "row_count": frame.height,
             "column_count": len(frame.columns),
             "source_file_count": 1,
             "schema_hash": "schema-1",

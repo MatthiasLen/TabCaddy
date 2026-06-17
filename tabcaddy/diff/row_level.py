@@ -205,8 +205,7 @@ def _raise_on_duplicate_keys(
     source_path: Path,
 ) -> None:
     duplicate = (
-        frame.lazy()
-        .group_by(list(key_columns))
+        frame.group_by(list(key_columns))
         .agg(pl.len().alias("_row_count"))
         .filter(pl.col("_row_count") > 1)
         .limit(1)
