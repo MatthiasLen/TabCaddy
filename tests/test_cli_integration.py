@@ -165,3 +165,36 @@ def test_transform_compiled_dataset_writes_compiled_output(
     payload = json.loads((transformed / "metadata.json").read_text(encoding="utf-8"))
     assert payload["compiled"]["source"] == str(compiled.resolve())
     assert payload["metadata"]["source_file_count"] == 2
+
+
+def test_compile_metadata_matches_written_output_and_includes_source_file(
+    tmp_path: Path, homogeneous_folder
+) -> None:
+    compiled = tmp_path / "compiled_dataset"
+
+    compile_result = runner.invoke(
+        app,
+        ["compile", str(homogeneous_folder), "--output", str(compiled)],
+    )
+    assert compile_result.exit_code == 0
+
+    part_files = sorted((compiled / "data").glob("*.parquet"))
+    assert part_files
+
+    payload = json.loads((compiled / "metadata.json").read_text(encoding="utf-8"))
+    output_schema = pl.scan_parquet([str(path) for path in part_files]).collect_schema()
+
+    assert "_source_file" in output_schema
+    assert payload["metadata"]["column_count"] == len(output_schema)
+    assert payload["metadata"]["row_count"] == int(
+        pl.scan_parquet([str(path) for path in part_files])
+        .select(pl.len())
+        .collect()
+        .item()
+    )
+
+    assert payload["statistics"] is not None
+    assert "_source_file" in payload["statistics"]["columns"]
+
+    schema_columns = {column["name"] for column in payload["schemas"][0]["columns"]}
+    assert "_source_file" in schema_columns
