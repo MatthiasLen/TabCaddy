@@ -228,7 +228,6 @@ class AnalysisBuilder:
             supports_approx_n_unique = supports_min_max
             descriptors.append((prefix, name, dtype))
 
-            print("Nullrate")
             expressions.append(
                 pl.col(name)
                 .is_null()
@@ -237,7 +236,6 @@ class AnalysisBuilder:
                 .alias(f"{prefix}_null_rate")
             )
 
-            print("Min/max")
             if supports_min_max:
                 expressions.extend(
                     [
@@ -254,7 +252,6 @@ class AnalysisBuilder:
                     ]
                 )
 
-            print("Numeric stats")
             if is_numeric:
                 expressions.extend(
                     [
@@ -278,14 +275,12 @@ class AnalysisBuilder:
                     pl.col(name).approx_n_unique().alias(f"{prefix}_unique")
                 )
 
-        print("Collecting statistics")
         # Using streaming execution to avoid materializing the entire result in memory, which can be large for wide datasets
         values = (
-            lazyframe.select(expressions).collect(engine="streaming").row(0, named=True)
+            lazyframe.select(expressions).collect(engine="auto").row(0, named=True)
             if expressions
             else {}
         )
-        print("Statistics collection complete")
 
         # For deep profiling, we compute column hashes and histograms in a separate pass to avoid the overhead of these computations when only quick profiling is requested
         if profile_mode == ProfileMode.DEEP:
