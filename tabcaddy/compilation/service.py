@@ -74,7 +74,7 @@ class CompileDataset:
             files=written,
             base_path=output_path,
             source_type=SourceType.COMPILED_DATASET,
-            profile_mode=ProfileMode.DEEP,
+            profile_mode=ProfileMode.STANDARD,
         )
         compiled_output.analysis.metadata.source_file_count = len(selected_files)
 

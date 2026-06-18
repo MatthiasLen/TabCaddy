@@ -185,6 +185,7 @@ def test_compile_metadata_matches_written_output_and_includes_source_file(
     output_schema = pl.scan_parquet([str(path) for path in part_files]).collect_schema()
 
     assert "_source_file" in output_schema
+    assert payload["metadata"]["column_hashes"] is None
     assert payload["metadata"]["column_count"] == len(output_schema)
     assert payload["metadata"]["row_count"] == int(
         pl.scan_parquet([str(path) for path in part_files])
