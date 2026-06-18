@@ -199,3 +199,68 @@ def test_compile_metadata_matches_written_output_and_includes_source_file(
 
     schema_columns = {column["name"] for column in payload["schemas"][0]["columns"]}
     assert "_source_file" in schema_columns
+
+
+def test_compile_with_validate_passes_for_homogeneous_folder(
+    tmp_path: Path, homogeneous_folder
+) -> None:
+    compiled = tmp_path / "compiled_validated"
+
+    result = runner.invoke(
+        app,
+        [
+            "compile",
+            str(homogeneous_folder),
+            "--output",
+            str(compiled),
+            "--validate",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Validation passed." in result.stdout
+    assert "Verified 2 selected files." in result.stdout
+
+
+def test_compile_with_validate_reports_skipped_files_without_failure(
+    tmp_path: Path, drift_folder
+) -> None:
+    compiled = tmp_path / "compiled_validated_drift"
+
+    result = runner.invoke(
+        app,
+        [
+            "compile",
+            str(drift_folder),
+            "--schema",
+            "1",
+            "--output",
+            str(compiled),
+            "--validate",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Skipped 1 files from non-selected schemas." in result.stdout
+    assert "Excluded files from compilation (schema mismatch):" in result.stdout
+    assert "Validation passed." in result.stdout
+
+
+def test_compile_reports_partial_coverage_when_unreadable_files_exist(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source_with_corrupt"
+    source.mkdir()
+    pl.DataFrame({"id": [1], "value": [10.0]}).write_csv(source / "ok.csv")
+    (source / "corrupt.feather").write_bytes(b"not-a-valid-feather")
+
+    compiled = tmp_path / "compiled_with_corrupt"
+    result = runner.invoke(
+        app,
+        ["compile", str(source), "--output", str(compiled)],
+    )
+
+    assert result.exit_code == 0
+    assert "compiled 1 of 2 supported files" in result.stdout
+    assert "Not compiled due to read/inspect errors: 1 files" in result.stdout
+    assert "Failed to inspect corrupt.feather" in result.stdout

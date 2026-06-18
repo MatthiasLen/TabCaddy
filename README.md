@@ -178,7 +178,7 @@ Focused schema analysis for schema groups, type changes, and non-dominant files.
 `compile`
 
 ```bash
-tabcaddy compile <folder> [--output compiled_dataset] [--schema N] [--interactive]
+tabcaddy compile <folder> [--output compiled_dataset] [--schema N] [--interactive] [--validate]
 ```
 
 Compiles a folder into a standardized Parquet-backed dataset.
@@ -186,6 +186,17 @@ Compiles a folder into a standardized Parquet-backed dataset.
 - use `--schema N` to choose a schema directly
 - use `--interactive` to inspect detected schemas and select one at the prompt
 - files from non-selected schemas are skipped and reported
+- use `--validate` to verify the compiled output against the selected source files
+- compile output includes a coverage summary, for example `compiled X of Y supported files`
+- unreadable/corrupt files are not compiled; they are counted in coverage and listed in warnings
+
+Validation checks:
+
+- compiled schema columns match expected selected-schema columns (plus `_source_file`)
+- selected source file coverage matches `_source_file` values in compiled parquet
+- total row count in compiled parquet matches selected source row count
+
+If source files are corrupt/unreadable, compile still succeeds when possible, and the coverage summary makes the partial compile explicit.
 
 `scaffold-transform`
 

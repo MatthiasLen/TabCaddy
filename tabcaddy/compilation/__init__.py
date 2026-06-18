@@ -1,3 +1,9 @@
-from tabcaddy.compilation.service import CompileDataset
+from tabcaddy.compilation.service import CompileCoverage, CompileDataset
+from tabcaddy.compilation.validator import ValidateCompiledDataset, ValidationResult
 
-__all__ = ["CompileDataset"]
+__all__ = [
+    "CompileCoverage",
+    "CompileDataset",
+    "ValidateCompiledDataset",
+    "ValidationResult",
+]

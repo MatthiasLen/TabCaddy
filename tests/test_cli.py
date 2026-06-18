@@ -7,6 +7,7 @@ import polars as pl
 from typer.testing import CliRunner
 
 from tabcaddy.cli.app import app
+from tabcaddy.compilation import ValidationResult
 
 
 runner = CliRunner()
@@ -387,6 +388,38 @@ def test_diff_command_returns_friendly_error_for_unsupported_combination(
 
     assert result.exit_code == 1
     assert "Unsupported diff source combination" in result.stdout
+
+
+def test_compile_with_validate_returns_nonzero_when_validation_fails(
+    tmp_path: Path, homogeneous_folder, monkeypatch
+) -> None:
+    class _FailingValidator:
+        def run(self, **_kwargs) -> ValidationResult:
+            _ = _kwargs
+            return ValidationResult(
+                passed=False,
+                errors=["synthetic validation failure"],
+            )
+
+    monkeypatch.setattr(
+        "tabcaddy.compilation.service.ValidateCompiledDataset",
+        _FailingValidator,
+    )
+
+    compiled = tmp_path / "compiled_invalid"
+    result = runner.invoke(
+        app,
+        [
+            "compile",
+            str(homogeneous_folder),
+            "--output",
+            str(compiled),
+            "--validate",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "synthetic validation failure" in result.stdout
 
 
 def test_diff_with_keys_shows_row_level_sections(tmp_path: Path) -> None:
