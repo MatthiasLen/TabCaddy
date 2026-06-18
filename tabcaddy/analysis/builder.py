@@ -12,6 +12,7 @@ from typing import Any
 
 import numpy as np
 import polars as pl
+from tqdm.auto import tqdm
 
 from tabcaddy.analysis.metadata import MetadataBuilder
 from tabcaddy.analysis.schema import FileSchemaRecord, SchemaAnalyzer
@@ -105,6 +106,9 @@ def _format_histogram_bound(value: float) -> str:
     if math.isclose(value, round(value), rel_tol=1e-9, abs_tol=1e-9):
         return str(int(round(value)))
     return f"{value:.3g}"
+
+
+_DEEP_PROFILE_BATCH_ROWS = 10_000
 
 
 class AnalysisBuilder:
@@ -214,6 +218,8 @@ class AnalysisBuilder:
         expressions: list[pl.Expr] = []
         descriptors: list[tuple[str, str, Any]] = []
 
+        # Building statistics in a single pass to leverage Polars'  execution engine,
+        # while avoiding materializing intermediate results in Python which can be costly for large datasets
         for index, (name, dtype) in enumerate(schema.items()):
             prefix = f"c{index}"
             is_numeric = _is_numeric_dtype(dtype)
@@ -222,6 +228,7 @@ class AnalysisBuilder:
             supports_approx_n_unique = supports_min_max
             descriptors.append((prefix, name, dtype))
 
+            print("Nullrate")
             expressions.append(
                 pl.col(name)
                 .is_null()
@@ -230,6 +237,7 @@ class AnalysisBuilder:
                 .alias(f"{prefix}_null_rate")
             )
 
+            print("Min/max")
             if supports_min_max:
                 expressions.extend(
                     [
@@ -246,6 +254,7 @@ class AnalysisBuilder:
                     ]
                 )
 
+            print("Numeric stats")
             if is_numeric:
                 expressions.extend(
                     [
@@ -269,11 +278,16 @@ class AnalysisBuilder:
                     pl.col(name).approx_n_unique().alias(f"{prefix}_unique")
                 )
 
+        print("Collecting statistics")
+        # Using streaming execution to avoid materializing the entire result in memory, which can be large for wide datasets
         values = (
             lazyframe.select(expressions).collect(engine="streaming").row(0, named=True)
             if expressions
             else {}
         )
+        print("Statistics collection complete")
+
+        # For deep profiling, we compute column hashes and histograms in a separate pass to avoid the overhead of these computations when only quick profiling is requested
         if profile_mode == ProfileMode.DEEP:
             column_hashes, histograms = self._build_deep_profiles(
                 lazyframe, descriptors, values
@@ -283,6 +297,8 @@ class AnalysisBuilder:
             histograms = {}
 
         columns: dict[str, ColumnStatistics] = {}
+
+        # Iterating over descriptors to construct column statistics, using the pre-computed values and histograms where applicable
         for prefix, name, dtype in descriptors:
             is_numeric = _is_numeric_dtype(dtype)
             is_temporal = _is_temporal_dtype(dtype)
@@ -331,6 +347,9 @@ class AnalysisBuilder:
             if _supports_min_max(dtype) and not _is_duration_dtype(dtype)
         ]
         hash_digests = {name: sha256() for name, _ in hashable_columns}
+        hash_aliases = {
+            name: f"__hash_{index}" for index, (name, _) in enumerate(hashable_columns)
+        }
         string_expressions = [
             (
                 pl.col(name).bin.encode("hex")
@@ -338,7 +357,7 @@ class AnalysisBuilder:
                 else pl.col(name).cast(pl.String)
             )
             .fill_null("<NULL>")
-            .alias(name)
+            .alias(hash_aliases[name])
             for name, dtype in hashable_columns
         ]
         histogram_counts: dict[str, np.ndarray] = {}
@@ -362,14 +381,27 @@ class AnalysisBuilder:
             histogram_edges[name] = np.linspace(lower, upper, num=bin_count + 1)
             histogram_counts[name] = np.zeros(bin_count, dtype=np.int64)
 
-        for batch in lazyframe.collect_batches():
+        histogram_columns = list(histogram_counts.keys())
+        projection = lazyframe.select(
+            [*string_expressions, *(pl.col(name) for name in histogram_columns)]
+        )
+
+        for batch in tqdm(
+            projection.collect_batches(
+                chunk_size=_DEEP_PROFILE_BATCH_ROWS,
+                engine="streaming",
+            ),
+            desc="Computing deep profile batches",
+            unit="batches",
+            disable=None,
+        ):
             if batch.height == 0:
                 continue
-            string_batch = batch.select(string_expressions)
             for name, digest in hash_digests.items():
-                col_values: list[str] = string_batch.get_column(name).to_list()
-                digest.update(b"\0".join(v.encode() for v in col_values))
-                digest.update(b"\0")
+                hash_column = batch.get_column(hash_aliases[name])
+                for value in hash_column.to_list():
+                    digest.update(value.encode())
+                    digest.update(b"\0")
             for name, counts in histogram_counts.items():
                 series = batch.get_column(name).drop_nulls()
                 if series.len() == 0:
@@ -377,10 +409,11 @@ class AnalysisBuilder:
                 numeric_values = np.asarray(
                     series.cast(pl.Float64).to_numpy(), dtype=float
                 )
+                finite_values = numeric_values[np.isfinite(numeric_values)]
+                if finite_values.size == 0:
+                    continue
                 edges = histogram_edges[name]
-                bucket_indexes = (
-                    np.searchsorted(edges, numeric_values, side="right") - 1
-                )
+                bucket_indexes = np.searchsorted(edges, finite_values, side="right") - 1
                 bucket_indexes = np.clip(bucket_indexes, 0, len(counts) - 1)
                 counts += np.bincount(bucket_indexes, minlength=len(counts))
 

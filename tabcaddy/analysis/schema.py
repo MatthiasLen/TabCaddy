@@ -74,7 +74,9 @@ class SchemaAnalyzer:
                 ]
                 schema_hash = hash_schema(columns)
                 row_count = int(
-                    scan.select(pl.len().alias("row_count")).collect().item()
+                    scan.select(pl.len().alias("row_count"))
+                    .collect(engine="auto")
+                    .item()
                 )
                 relative_path = (
                     path.relative_to(base_path)
