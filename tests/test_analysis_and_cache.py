@@ -80,6 +80,27 @@ def test_analysis_builder_handles_timezone_aware_datetimes(tmp_path: Path) -> No
     )
 
 
+def test_analysis_builder_skips_corrupt_files_when_building_statistics(
+    tmp_path: Path,
+) -> None:
+    good = tmp_path / "good.parquet"
+    bad = tmp_path / "bad.parquet"
+
+    pl.DataFrame({"id": [1, 2], "value": [10.0, 20.0]}).write_parquet(good)
+    bad.write_bytes(b"not-a-valid-parquet")
+
+    result = AnalysisBuilder().build(resolve_source(tmp_path), ProfileMode.STANDARD)
+
+    assert result.analysis.statistics is not None
+    assert result.analysis.metadata.row_count == 2
+    assert len(result.files) == 1
+    assert result.files[0].path == good
+    assert any(
+        "Failed to inspect bad.parquet" in warning
+        for warning in result.analysis.warnings
+    )
+
+
 def test_generate_analysis_uses_cached_build_result(
     tmp_path, homogeneous_folder
 ) -> None:

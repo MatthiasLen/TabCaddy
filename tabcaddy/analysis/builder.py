@@ -24,7 +24,7 @@ from tabcaddy.domain.models import (
     ProfileMode,
     SourceType,
 )
-from tabcaddy.shared.dataset_io import scan_dataframe, scan_parquet_dataset
+from tabcaddy.shared.dataset_io import scan_dataframe
 from tabcaddy.shared.serialization import analysis_from_dict
 
 
@@ -177,7 +177,8 @@ class AnalysisBuilder:
         column_hashes: dict[str, str] | None = None
 
         if schema_result.files and profile_mode != ProfileMode.QUICK:
-            lazyframe = self._build_lazyframe(files, source_type)
+            valid_files = [record.path for record in schema_result.files]
+            lazyframe = self._build_lazyframe(valid_files, source_type)
             statistics, column_hashes = self._build_statistics(lazyframe, profile_mode)
 
         metadata = self._metadata_builder.build(
@@ -200,7 +201,7 @@ class AnalysisBuilder:
         self, files: list[Path], source_type: SourceType
     ) -> pl.LazyFrame:
         if source_type == SourceType.COMPILED_DATASET:
-            return scan_parquet_dataset(files[0].parent.parent)
+            return pl.scan_parquet([str(path) for path in files])
         lazyframes = [scan_dataframe(path) for path in files]
         if len(lazyframes) == 1:
             return lazyframes[0]
