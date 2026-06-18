@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from rich.console import Group
+from rich.text import Text
 
 from tabcaddy.domain.models import DatasetAnalysis
 from tabcaddy.analysis.schema import FileSchemaRecord
@@ -77,5 +78,17 @@ def build_schema_view(
                     str(record.row_count),
                 )
             blocks.append(violating)
+
+    if analysis.warnings:
+        warning_text = Text(
+            "\n".join(f"- {warning}" for warning in analysis.warnings), style="yellow"
+        )
+        blocks.append(
+            render.panel(
+                warning_text,
+                title="Warnings",
+                border_style="yellow",
+            )
+        )
 
     return Group(*blocks)

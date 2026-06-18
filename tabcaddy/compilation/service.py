@@ -26,7 +26,7 @@ class CompileDataset:
         output_path: Path,
         schema_index: int | None = None,
         precomputed_selection: AnalysisBuildResult | None = None,
-    ) -> tuple[Path, list[str]]:
+    ) -> tuple[Path, list[str], list[str]]:
         if source.source_type != SourceType.FOLDER:
             raise ValueError("Compile expects a folder source.")
 
@@ -94,4 +94,4 @@ class CompileDataset:
             for record in selection.files
             if record.schema_hash != selected_schema.hash
         ]
-        return output_path, skipped
+        return output_path, skipped, list(selection.analysis.warnings)

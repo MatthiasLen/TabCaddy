@@ -5,6 +5,7 @@ from typing import Literal
 
 import polars as pl
 import typer
+from rich.text import Text
 
 from tabcaddy.analysis import GenerateAnalysis, resolve_source
 from tabcaddy.compilation import CompileDataset
@@ -87,6 +88,7 @@ def compile_dataset(
     interactive: bool = typer.Option(False, "--interactive"),
 ) -> None:
     console = create_console()
+    render = resolve_render_profile(console)
     compiler = CompileDataset()
     try:
         source = resolve_source(folder)
@@ -107,7 +109,7 @@ def compile_dataset(
                     )
                 selected_schema = typer.prompt("Choose schema number", type=int)
 
-        output_path, skipped = compiler.run(
+        output_path, skipped, warnings = compiler.run(
             source,
             output,
             selected_schema,
@@ -121,6 +123,17 @@ def compile_dataset(
     if skipped:
         console.print(
             f"Skipped {len(skipped)} files from non-selected schemas.", style="yellow"
+        )
+    if warnings:
+        warning_text = Text(
+            "\n".join(f"- {warning}" for warning in warnings), style="yellow"
+        )
+        console.print(
+            render.panel(
+                warning_text,
+                title="Warnings",
+                border_style="yellow",
+            )
         )
 
 

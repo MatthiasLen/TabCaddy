@@ -128,13 +128,5 @@ def build_summary_view(
                 border_style="yellow",
             )
         )
-    else:
-        blocks.append(
-            render.panel(
-                "No warnings detected.",
-                title="Warnings",
-                border_style="green",
-            )
-        )
 
     return Group(*blocks)

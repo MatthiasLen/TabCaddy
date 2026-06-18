@@ -94,6 +94,21 @@ def test_schema_command_populates_analysis_cache(tmp_path: Path, monkeypatch) ->
     assert any(cache_root.glob("*.json"))
 
 
+def test_schema_command_shows_warnings_for_unreadable_files(tmp_path: Path) -> None:
+    data = tmp_path / "data"
+    data.mkdir()
+    pl.DataFrame({"id": [1, 2], "value": [10.0, 11.0]}).write_parquet(
+        data / "good.parquet"
+    )
+    (data / "bad.parquet").write_bytes(b"not-a-valid-parquet")
+
+    schema_result = runner.invoke(app, ["schema", str(data)])
+
+    assert schema_result.exit_code == 0
+    assert "Warnings" in schema_result.stdout
+    assert "Failed to inspect bad.parquet" in schema_result.stdout
+
+
 def test_scaffold_transform_populates_analysis_cache(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -243,6 +258,27 @@ def test_compile_accepts_parquet_inputs(tmp_path: Path) -> None:
     assert compile_result.exit_code == 0
     assert (tmp_path / "compiled" / "metadata.json").exists()
     assert any((tmp_path / "compiled" / "data").glob("*.parquet"))
+
+
+def test_compile_shows_warnings_for_unreadable_files(tmp_path: Path) -> None:
+    data = tmp_path / "data"
+    data.mkdir()
+    pl.DataFrame(
+        [
+            {"id": 1, "value": 10.0},
+            {"id": 2, "value": 11.0},
+        ]
+    ).write_parquet(data / "good.parquet")
+    (data / "bad.parquet").write_bytes(b"not-a-valid-parquet")
+
+    compile_result = runner.invoke(
+        app, ["compile", str(data), "--output", str(tmp_path / "compiled")]
+    )
+
+    assert compile_result.exit_code == 0
+    assert "Warnings" in compile_result.stdout
+    assert "Failed to inspect bad.parquet" in compile_result.stdout
+    assert (tmp_path / "compiled" / "metadata.json").exists()
 
 
 def test_head_accepts_parquet_file_and_folder_inputs(tmp_path: Path) -> None:
