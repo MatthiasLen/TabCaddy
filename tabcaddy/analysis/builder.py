@@ -269,7 +269,7 @@ class AnalysisBuilder:
                 )
 
         values = (
-            lazyframe.select(expressions).collect().row(0, named=True)
+            lazyframe.select(expressions).collect(engine="streaming").row(0, named=True)
             if expressions
             else {}
         )
