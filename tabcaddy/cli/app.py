@@ -88,6 +88,11 @@ def compile_dataset(
         None, "--schema", help="Index of schema to compile when multiple are detected"
     ),
     interactive: bool = typer.Option(False, "--interactive"),
+    validate: bool = typer.Option(
+        False,
+        "--validate",
+        help="Validate compiled output against selected source files.",
+    ),
 ) -> None:
     console = create_console()
     render = resolve_render_profile(console)
@@ -111,17 +116,47 @@ def compile_dataset(
                     )
                 selected_schema = typer.prompt("Choose schema number", type=int)
 
-        output_path, skipped, warnings = compiler.run(
+        output_path, skipped, warnings, validation_result, coverage = compiler.run(
             source,
             output,
             selected_schema,
             precomputed_selection=selection_preview,
+            validate=validate,
+            validation_progress=(
+                lambda message: console.print(
+                    message,
+                    style="cyan",
+                    markup=False,
+                )
+                if validate
+                else None
+            ),
         )
     except (FileExistsError, FileNotFoundError, ValueError) as error:
         console.print(f"[red]{error}[/red]")
         raise typer.Exit(code=1) from error
 
-    console.print(f"Compiled dataset written to [green]{output_path}[/green]")
+    if coverage.selected_files < coverage.total_supported_files:
+        console.print(
+            "[yellow]Compilation coverage:[/yellow] "
+            f"compiled {coverage.selected_files} of {coverage.total_supported_files} supported files."
+        )
+        if coverage.unreadable_files > 0:
+            console.print(
+                "[yellow]Not compiled due to read/inspect errors:[/yellow] "
+                f"{coverage.unreadable_files} files. See warnings below."
+            )
+        if coverage.skipped_schema_files > 0:
+            console.print(
+                "[yellow]Not compiled due to schema selection:[/yellow] "
+                f"{coverage.skipped_schema_files} files."
+            )
+    else:
+        console.print(
+            "[green]Compilation coverage:[/green] "
+            f"all {coverage.selected_files} supported files were compiled."
+        )
+
     if skipped:
         console.print(
             f"Skipped {len(skipped)} files from non-selected schemas.", style="yellow"
@@ -137,6 +172,22 @@ def compile_dataset(
                 border_style="yellow",
             )
         )
+    console.print(f"Compiled dataset written to [green]{output_path}[/green]")
+
+    if validation_result is not None:
+        for warning in validation_result.warnings:
+            console.print(warning, style="yellow", markup=False)
+
+        if validation_result.passed:
+            console.print(
+                "[green]Validation passed.[/green] "
+                f"Verified {validation_result.selected_file_count} selected files."
+            )
+            return
+
+        for error in validation_result.errors:
+            console.print(error, style="red", markup=False)
+        raise typer.Exit(code=1)
 
 
 @app.command(help="Transform a dataset using a specified transform script")
