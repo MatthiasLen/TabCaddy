@@ -53,7 +53,7 @@ class TransformDataset:
         transform_path: Path,
         output_path: Path | None,
         workers: int,
-    ) -> Path:
+    ) -> tuple[Path, list[str]]:
         write_to_single_file = (
             source.source_type == SourceType.FILE
             and output_path is not None
@@ -78,10 +78,10 @@ class TransformDataset:
         schema_result = self._schema_analyzer.analyze_files(
             files, base_path=source.path, source_type=source.source_type
         )
-        record_map = {record.path: record for record in schema_result.files}
+        records = list(schema_result.files)
 
-        def process(path: Path) -> Path:
-            record = record_map[path]
+        def process(record) -> Path:
+            path = record.path
             df = read_dataframe(path)
             context = TransformContext(
                 file_name=path.name,
@@ -113,10 +113,10 @@ class TransformDataset:
             return target
 
         if workers <= 1:
-            written_files = [process(path) for path in files]
+            written_files = [process(record) for record in records]
         else:
             with ThreadPoolExecutor(max_workers=workers) as executor:
-                written_files = list(executor.map(process, files))
+                written_files = list(executor.map(process, records))
 
         if source.source_type == SourceType.COMPILED_DATASET:
             if output_root is None:
@@ -131,9 +131,9 @@ class TransformDataset:
             )
 
         if output_file is not None:
-            return output_file
+            return output_file, list(schema_result.warnings)
         assert output_root is not None
-        return output_root
+        return output_root, list(schema_result.warnings)
 
     def _is_file_output_path(self, output_path: Path) -> bool:
         if output_path.exists():

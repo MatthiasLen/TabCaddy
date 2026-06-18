@@ -145,15 +145,27 @@ def transform(
     workers: int = typer.Option(1, "--workers", min=1),
 ) -> None:
     console = create_console()
+    render = resolve_render_profile(console)
     try:
         source = resolve_source(input_path)
-        destination = TransformDataset().run(
+        destination, warnings = TransformDataset().run(
             source, transform_path, output_path, workers
         )
     except Exception as error:
         console.print(f"[red]{error}[/red]")
         raise typer.Exit(code=1) from error
     console.print(f"Transformed files written to [green]{destination}[/green]")
+    if warnings:
+        warning_text = Text(
+            "\n".join(f"- {warning}" for warning in warnings), style="yellow"
+        )
+        console.print(
+            render.panel(
+                warning_text,
+                title="Warnings",
+                border_style="yellow",
+            )
+        )
 
 
 @app.command(
