@@ -83,6 +83,21 @@ def test_analysis_builder_handles_timezone_aware_datetimes(tmp_path: Path) -> No
     )
 
 
+def test_internal_deep_mode_skips_histograms_but_keeps_hashes(
+    homogeneous_folder,
+) -> None:
+    analysis = (
+        AnalysisBuilder()
+        .build(resolve_source(homogeneous_folder), ProfileMode.DEEP_NO_HIST)
+        .analysis
+    )
+
+    assert analysis.metadata.column_hashes is not None
+    assert analysis.statistics is not None
+    assert analysis.statistics.columns["value"].unique_estimate is not None
+    assert analysis.statistics.columns["value"].histogram is None
+
+
 def test_analysis_builder_skips_corrupt_files_when_building_statistics(
     tmp_path: Path,
 ) -> None:

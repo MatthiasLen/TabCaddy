@@ -40,14 +40,16 @@ def root() -> None:
 )
 def summary(
     source: Path,
-    profile: ProfileMode = typer.Option(ProfileMode.STANDARD, "--profile"),
+    profile: Literal["quick", "standard", "deep"] = typer.Option(
+        "standard", "--profile"
+    ),
 ) -> None:
     source = Path(source).expanduser().resolve()
     console = create_console()
     render = resolve_render_profile(console)
 
     try:
-        result = GenerateAnalysis().run(resolve_source(source), profile)
+        result = GenerateAnalysis().run(resolve_source(source), ProfileMode(profile))
     except (FileNotFoundError, ValueError) as error:
         console.print(f"[red]{error}[/red]")
         raise typer.Exit(code=1) from error

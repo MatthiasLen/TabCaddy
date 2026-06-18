@@ -111,6 +111,10 @@ def _format_histogram_bound(value: float) -> str:
 _DEEP_PROFILE_BATCH_ROWS = 10_000
 
 
+def _is_deep_profile_mode(profile_mode: ProfileMode) -> bool:
+    return profile_mode in {ProfileMode.DEEP, ProfileMode.DEEP_NO_HIST}
+
+
 class AnalysisBuilder:
     def __init__(
         self,
@@ -189,7 +193,9 @@ class AnalysisBuilder:
             schema_result=schema_result,
             row_count=row_count,
             column_count=len(column_names),
-            column_hashes=column_hashes if profile_mode == ProfileMode.DEEP else None,
+            column_hashes=column_hashes
+            if _is_deep_profile_mode(profile_mode)
+            else None,
         )
         return AnalysisBuildResult(
             analysis=DatasetAnalysis(
@@ -214,6 +220,7 @@ class AnalysisBuilder:
     def _build_statistics(
         self, lazyframe: pl.LazyFrame, profile_mode: ProfileMode
     ) -> tuple[DatasetStatistics, dict[str, str] | None]:
+        deep_profile = _is_deep_profile_mode(profile_mode)
         schema = lazyframe.collect_schema()
         expressions: list[pl.Expr] = []
         descriptors: list[tuple[str, str, Any]] = []
@@ -270,7 +277,7 @@ class AnalysisBuilder:
                     .alias(f"{prefix}_median")
                 )
 
-            if profile_mode == ProfileMode.DEEP and supports_approx_n_unique:
+            if deep_profile and supports_approx_n_unique:
                 expressions.append(
                     pl.col(name).approx_n_unique().alias(f"{prefix}_unique")
                 )
@@ -283,9 +290,12 @@ class AnalysisBuilder:
         )
 
         # For deep profiling, we compute column hashes and histograms in a separate pass to avoid the overhead of these computations when only quick profiling is requested
-        if profile_mode == ProfileMode.DEEP:
+        if deep_profile:
             column_hashes, histograms = self._build_deep_profiles(
-                lazyframe, descriptors, values
+                lazyframe,
+                descriptors,
+                values,
+                include_histograms=profile_mode == ProfileMode.DEEP,
             )
         else:
             column_hashes = None
@@ -301,7 +311,7 @@ class AnalysisBuilder:
                 dtype=str(dtype),
                 null_rate=float(values.get(f"{prefix}_null_rate", 0.0) or 0.0),
                 unique_estimate=None
-                if profile_mode != ProfileMode.DEEP or not _supports_min_max(dtype)
+                if not deep_profile or not _supports_min_max(dtype)
                 else int(values.get(f"{prefix}_unique", 0) or 0),
                 min_value=(
                     values.get(f"{prefix}_min")
@@ -335,6 +345,8 @@ class AnalysisBuilder:
         lazyframe: pl.LazyFrame,
         descriptors: list[tuple[str, str, Any]],
         values: dict[str, Any],
+        *,
+        include_histograms: bool,
     ) -> tuple[dict[str, str], dict[str, list[tuple[str, int]]]]:
         hashable_columns = [
             (name, dtype)
@@ -359,22 +371,25 @@ class AnalysisBuilder:
         histogram_edges: dict[str, np.ndarray] = {}
         histograms: dict[str, list[tuple[str, int]]] = {}
 
-        for prefix, name, dtype in descriptors:
-            if not _is_numeric_dtype(dtype):
-                continue
-            non_null_count = int(values.get(f"{prefix}_count", 0) or 0)
-            if non_null_count == 0:
-                continue
-            lower = float(values[f"{prefix}_min"])
-            upper = float(values[f"{prefix}_max"])
-            if not math.isfinite(lower) or not math.isfinite(upper):
-                continue
-            if math.isclose(lower, upper, rel_tol=1e-9, abs_tol=1e-9):
-                histograms[name] = [(_format_histogram_bound(lower), non_null_count)]
-                continue
-            bin_count = min(8, max(2, math.ceil(math.sqrt(non_null_count))))
-            histogram_edges[name] = np.linspace(lower, upper, num=bin_count + 1)
-            histogram_counts[name] = np.zeros(bin_count, dtype=np.int64)
+        if include_histograms:
+            for prefix, name, dtype in descriptors:
+                if not _is_numeric_dtype(dtype):
+                    continue
+                non_null_count = int(values.get(f"{prefix}_count", 0) or 0)
+                if non_null_count == 0:
+                    continue
+                lower = float(values[f"{prefix}_min"])
+                upper = float(values[f"{prefix}_max"])
+                if not math.isfinite(lower) or not math.isfinite(upper):
+                    continue
+                if math.isclose(lower, upper, rel_tol=1e-9, abs_tol=1e-9):
+                    histograms[name] = [
+                        (_format_histogram_bound(lower), non_null_count)
+                    ]
+                    continue
+                bin_count = min(8, max(2, math.ceil(math.sqrt(non_null_count))))
+                histogram_edges[name] = np.linspace(lower, upper, num=bin_count + 1)
+                histogram_counts[name] = np.zeros(bin_count, dtype=np.int64)
 
         histogram_columns = list(histogram_counts.keys())
         projection = lazyframe.select(
@@ -386,7 +401,11 @@ class AnalysisBuilder:
                 chunk_size=_DEEP_PROFILE_BATCH_ROWS,
                 engine="streaming",
             ),
-            desc="Computing deep profile batches",
+            desc=(
+                "Computing deep profile batches"
+                if include_histograms
+                else "Computing deep profile hashes"
+            ),
             unit="batches",
             disable=None,
         ):
@@ -397,20 +416,23 @@ class AnalysisBuilder:
                 for value in hash_column.to_list():
                     digest.update(value.encode())
                     digest.update(b"\0")
-            for name, counts in histogram_counts.items():
-                series = batch.get_column(name).drop_nulls()
-                if series.len() == 0:
-                    continue
-                numeric_values = np.asarray(
-                    series.cast(pl.Float64).to_numpy(), dtype=float
-                )
-                finite_values = numeric_values[np.isfinite(numeric_values)]
-                if finite_values.size == 0:
-                    continue
-                edges = histogram_edges[name]
-                bucket_indexes = np.searchsorted(edges, finite_values, side="right") - 1
-                bucket_indexes = np.clip(bucket_indexes, 0, len(counts) - 1)
-                counts += np.bincount(bucket_indexes, minlength=len(counts))
+            if include_histograms:
+                for name, counts in histogram_counts.items():
+                    series = batch.get_column(name).drop_nulls()
+                    if series.len() == 0:
+                        continue
+                    numeric_values = np.asarray(
+                        series.cast(pl.Float64).to_numpy(), dtype=float
+                    )
+                    finite_values = numeric_values[np.isfinite(numeric_values)]
+                    if finite_values.size == 0:
+                        continue
+                    edges = histogram_edges[name]
+                    bucket_indexes = (
+                        np.searchsorted(edges, finite_values, side="right") - 1
+                    )
+                    bucket_indexes = np.clip(bucket_indexes, 0, len(counts) - 1)
+                    counts += np.bincount(bucket_indexes, minlength=len(counts))
 
         for name, counts in histogram_counts.items():
             edges = histogram_edges[name]
