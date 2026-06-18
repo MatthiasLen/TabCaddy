@@ -124,7 +124,9 @@ class ValidateCompiledDataset:
         )
 
     def _read_compiled_columns(self, compiled_parts: list[Path]) -> set[str]:
-        schema = pl.scan_parquet([str(path) for path in compiled_parts]).collect_schema()
+        schema = pl.scan_parquet(
+            [str(path) for path in compiled_parts]
+        ).collect_schema()
         return set(schema.names())
 
     def _validate_columns(

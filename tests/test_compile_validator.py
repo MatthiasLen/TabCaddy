@@ -49,7 +49,9 @@ def test_validator_passes_and_reports_skipped_as_warning_only(tmp_path: Path) ->
 
     assert result.passed is True
     assert result.errors == []
-    assert any("Excluded files from compilation" in warning for warning in result.warnings)
+    assert any(
+        "Excluded files from compilation" in warning for warning in result.warnings
+    )
 
 
 def test_validator_fails_when_selected_file_rows_are_missing(tmp_path: Path) -> None:
