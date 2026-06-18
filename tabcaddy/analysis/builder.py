@@ -275,7 +275,7 @@ class AnalysisBuilder:
                     pl.col(name).approx_n_unique().alias(f"{prefix}_unique")
                 )
 
-        # Using streaming execution to avoid materializing the entire result in memory, which can be large for wide datasets
+        # Collecting the computed statistics in a single pass 
         values = (
             lazyframe.select(expressions).collect(engine="auto").row(0, named=True)
             if expressions
