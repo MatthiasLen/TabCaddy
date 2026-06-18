@@ -264,3 +264,17 @@ def test_compile_reports_partial_coverage_when_unreadable_files_exist(
     assert "compiled 1 of 2 supported files" in result.stdout
     assert "Not compiled due to read/inspect errors: 1 files" in result.stdout
     assert "Failed to inspect corrupt.feather" in result.stdout
+
+
+def test_compile_coverage_excludes_nested_output_directory(
+    homogeneous_folder: Path,
+) -> None:
+    compiled = homogeneous_folder / "compiled_nested"
+
+    result = runner.invoke(
+        app,
+        ["compile", str(homogeneous_folder), "--output", str(compiled)],
+    )
+
+    assert result.exit_code == 0
+    assert "all 2 supported files were compiled" in result.stdout

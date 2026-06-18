@@ -119,10 +119,15 @@ class CompileDataset:
             for record in selection.files
             if record.schema_hash != selected_schema.hash
         ]
+        resolved_output_path = output_path.resolve()
         total_supported_files = sum(
             1
             for path in source.path.rglob("*")
-            if path.is_file() and path.suffix.lower() in SUPPORTED_FILE_SUFFIXES
+            if (
+                path.is_file()
+                and path.suffix.lower() in SUPPORTED_FILE_SUFFIXES
+                and not path.is_relative_to(resolved_output_path)
+            )
         )
         analyzed_files = len(selection.files)
         unreadable_files = max(total_supported_files - analyzed_files, 0)

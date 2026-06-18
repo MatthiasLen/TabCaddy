@@ -6,7 +6,7 @@ from typing import Callable
 
 import polars as pl
 
-from tabcaddy.shared.dataset_io import read_dataframe
+from tabcaddy.shared.dataset_io import scan_dataframe
 
 
 _SOURCE_FILE_COLUMN = "_source_file"
@@ -101,7 +101,7 @@ class ValidateCompiledDataset:
 
         _status("Validation step 3/3: checking row counts.")
         expected_row_count, observed_row_count = self._validate_row_count(
-            selected_files, compiled_parts, errors
+            source_root, selected_files, compiled_parts, errors
         )
         _status(
             "Row-count summary: "
@@ -194,17 +194,45 @@ class ValidateCompiledDataset:
 
     def _validate_row_count(
         self,
+        source_root: Path,
         selected_files: list[Path],
         compiled_parts: list[Path],
         errors: list[str],
     ) -> tuple[int, int]:
-        expected_row_count = sum(read_dataframe(path).height for path in selected_files)
-        observed_row_count = int(
-            pl.scan_parquet([str(path) for path in compiled_parts])
-            .select(pl.len())
-            .collect()
-            .item()
-        )
+        expected_row_count = 0
+        source_count_incomplete = False
+        for path in selected_files:
+            try:
+                expected_row_count += int(
+                    scan_dataframe(path).select(pl.len()).collect().item()
+                )
+            except (OSError, ValueError, pl.exceptions.PolarsError) as error:
+                source_count_incomplete = True
+                display_path = (
+                    path.relative_to(source_root).as_posix()
+                    if path.is_relative_to(source_root)
+                    else str(path)
+                )
+                errors.append(
+                    "Unable to read selected source file during validation: "
+                    f"{display_path} ({error})"
+                )
+
+        try:
+            observed_row_count = int(
+                pl.scan_parquet([str(path) for path in compiled_parts])
+                .select(pl.len())
+                .collect()
+                .item()
+            )
+        except (OSError, pl.exceptions.PolarsError) as error:
+            errors.append(
+                f"Unable to read compiled dataset rows during validation: {error}"
+            )
+            return expected_row_count, 0
+
+        if source_count_incomplete:
+            return expected_row_count, observed_row_count
 
         if expected_row_count != observed_row_count:
             errors.append(

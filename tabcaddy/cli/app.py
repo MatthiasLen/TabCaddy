@@ -123,7 +123,11 @@ def compile_dataset(
             precomputed_selection=selection_preview,
             validate=validate,
             validation_progress=(
-                lambda message: console.print(f"[cyan]{message}[/cyan]")
+                lambda message: console.print(
+                    message,
+                    style="cyan",
+                    markup=False,
+                )
                 if validate
                 else None
             ),
@@ -172,7 +176,7 @@ def compile_dataset(
 
     if validation_result is not None:
         for warning in validation_result.warnings:
-            console.print(f"[yellow]{warning}[/yellow]")
+            console.print(warning, style="yellow", markup=False)
 
         if validation_result.passed:
             console.print(
@@ -182,7 +186,7 @@ def compile_dataset(
             return
 
         for error in validation_result.errors:
-            console.print(f"[red]{error}[/red]")
+            console.print(error, style="red", markup=False)
         raise typer.Exit(code=1)
 
 

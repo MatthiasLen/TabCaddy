@@ -159,3 +159,33 @@ def test_validator_fails_when_source_file_column_is_missing(tmp_path: Path) -> N
 
     assert result.passed is False
     assert any("missing expected columns" in error for error in result.errors)
+
+
+def test_validator_reports_unreadable_selected_files_without_row_mismatch(
+    tmp_path: Path,
+) -> None:
+    source_root = tmp_path / "source"
+    source_root.mkdir()
+
+    selected_bad = source_root / "bad.feather"
+    selected_bad.write_bytes(b"not-a-valid-feather")
+
+    compiled_part = _write_compiled_part(
+        tmp_path / "compiled" / "data" / "part-001.parquet",
+        [{"id": 1, "_source_file": "bad.feather"}],
+    )
+
+    result = ValidateCompiledDataset().run(
+        source_root=source_root,
+        selected_files=[selected_bad],
+        skipped_files=[],
+        compiled_parts=[compiled_part],
+        expected_columns={"id", "_source_file"},
+    )
+
+    assert result.passed is False
+    assert any(
+        "Unable to read selected source file during validation" in error
+        for error in result.errors
+    )
+    assert not any("row count mismatch" in error for error in result.errors)
