@@ -17,14 +17,15 @@ class GenerateAnalysis:
     def run(
         self, source: DatasetSource, profile_mode: ProfileMode
     ) -> AnalysisBuildResult:
-        if source.source_type == SourceType.COMPILED_DATASET:
-            compiled = self._analysis_builder.load_compiled_result(source)
-            if compiled is not None:
-                return compiled
-
         cached = self._cache_manager.get(source, profile_mode)
         if cached is not None:
             return cached
+
+        if source.source_type == SourceType.COMPILED_DATASET:
+            compiled = self._analysis_builder.load_compiled_result(source)
+            if compiled is not None:
+                self._cache_manager.set(source, profile_mode, compiled)
+                return compiled
 
         result = self._analysis_builder.build(source, profile_mode)
         self._cache_manager.set(source, profile_mode, result)

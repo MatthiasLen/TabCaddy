@@ -94,6 +94,21 @@ def test_schema_command_populates_analysis_cache(tmp_path: Path, monkeypatch) ->
     assert any(cache_root.glob("*.json"))
 
 
+def test_schema_command_shows_warnings_for_unreadable_files(tmp_path: Path) -> None:
+    data = tmp_path / "data"
+    data.mkdir()
+    pl.DataFrame({"id": [1, 2], "value": [10.0, 11.0]}).write_parquet(
+        data / "good.parquet"
+    )
+    (data / "bad.parquet").write_bytes(b"not-a-valid-parquet")
+
+    schema_result = runner.invoke(app, ["schema", str(data)])
+
+    assert schema_result.exit_code == 0
+    assert "Warnings" in schema_result.stdout
+    assert "Failed to inspect bad.parquet" in schema_result.stdout
+
+
 def test_scaffold_transform_populates_analysis_cache(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -181,6 +196,31 @@ def test_transform_single_file_output_path_like_file_writes_file(
     assert transformed["value"][0] == 10.0
 
 
+def test_transform_shows_warnings_for_unreadable_files(tmp_path: Path) -> None:
+    data = tmp_path / "data"
+    data.mkdir()
+    _write_csv(data / "good.csv", [{"id": 1, "value": 10.0}])
+    (data / "bad.parquet").write_bytes(b"not-a-valid-parquet")
+
+    transform_script = tmp_path / "transform.py"
+    transform_script.write_text(
+        "import polars as pl\n\ndef transform(df, context=None):\n    return df\n",
+        encoding="utf-8",
+    )
+
+    output_dir = tmp_path / "transformed"
+    transform_result = runner.invoke(
+        app,
+        ["transform", str(data), str(transform_script), str(output_dir)],
+    )
+
+    assert transform_result.exit_code == 0
+    assert "Warnings" in transform_result.stdout
+    assert "Failed to inspect bad.parquet" in transform_result.stdout
+    assert (output_dir / "good.csv").exists()
+    assert not (output_dir / "bad.parquet").exists()
+
+
 def test_compile_transform_scaffold_and_diff_commands(tmp_path: Path) -> None:
     left = tmp_path / "left"
     right = tmp_path / "right"
@@ -243,6 +283,27 @@ def test_compile_accepts_parquet_inputs(tmp_path: Path) -> None:
     assert compile_result.exit_code == 0
     assert (tmp_path / "compiled" / "metadata.json").exists()
     assert any((tmp_path / "compiled" / "data").glob("*.parquet"))
+
+
+def test_compile_shows_warnings_for_unreadable_files(tmp_path: Path) -> None:
+    data = tmp_path / "data"
+    data.mkdir()
+    pl.DataFrame(
+        [
+            {"id": 1, "value": 10.0},
+            {"id": 2, "value": 11.0},
+        ]
+    ).write_parquet(data / "good.parquet")
+    (data / "bad.parquet").write_bytes(b"not-a-valid-parquet")
+
+    compile_result = runner.invoke(
+        app, ["compile", str(data), "--output", str(tmp_path / "compiled")]
+    )
+
+    assert compile_result.exit_code == 0
+    assert "Warnings" in compile_result.stdout
+    assert "Failed to inspect bad.parquet" in compile_result.stdout
+    assert (tmp_path / "compiled" / "metadata.json").exists()
 
 
 def test_head_accepts_parquet_file_and_folder_inputs(tmp_path: Path) -> None:

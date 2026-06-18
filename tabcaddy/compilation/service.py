@@ -5,7 +5,7 @@ from pathlib import Path
 
 import polars as pl
 
-from tabcaddy.analysis.builder import AnalysisBuilder
+from tabcaddy.analysis.builder import AnalysisBuildResult, AnalysisBuilder
 from tabcaddy.domain.models import DatasetSource, ProfileMode, SourceType
 from tabcaddy.shared.dataset_io import read_dataframe, write_parquet_dataset
 from tabcaddy.shared.serialization import analysis_to_dict
@@ -15,14 +15,23 @@ class CompileDataset:
     def __init__(self, analysis_builder: AnalysisBuilder | None = None) -> None:
         self._analysis_builder = analysis_builder or AnalysisBuilder()
 
+    def preview_selection(self, source: DatasetSource) -> AnalysisBuildResult:
+        if source.source_type != SourceType.FOLDER:
+            raise ValueError("Compile expects a folder source.")
+        return self._analysis_builder.build(source, ProfileMode.QUICK)
+
     def run(
-        self, source: DatasetSource, output_path: Path, schema_index: int | None = None
-    ) -> tuple[Path, list[str]]:
+        self,
+        source: DatasetSource,
+        output_path: Path,
+        schema_index: int | None = None,
+        precomputed_selection: AnalysisBuildResult | None = None,
+    ) -> tuple[Path, list[str], list[str]]:
         if source.source_type != SourceType.FOLDER:
             raise ValueError("Compile expects a folder source.")
 
-        build_result = self._analysis_builder.build(source, ProfileMode.STANDARD)
-        schemas = build_result.analysis.schemas
+        selection = precomputed_selection or self.preview_selection(source)
+        schemas = selection.analysis.schemas
 
         if not schemas:
             raise ValueError("No schemas found to compile.")
@@ -44,7 +53,7 @@ class CompileDataset:
         selected_schema = schemas[chosen_index - 1]
         selected_files = [
             record.path
-            for record in build_result.files
+            for record in selection.files
             if record.schema_hash == selected_schema.hash
         ]
 
@@ -61,14 +70,15 @@ class CompileDataset:
             total=len(selected_files),
         )
 
-        selected_analysis = self._analysis_builder.build_file_set(
-            files=selected_files,
-            base_path=source.path,
-            source_type=SourceType.FOLDER,
-            profile_mode=ProfileMode.DEEP,
-        ).analysis
+        compiled_output = self._analysis_builder.build_file_set(
+            files=written,
+            base_path=output_path,
+            source_type=SourceType.COMPILED_DATASET,
+            profile_mode=ProfileMode.STANDARD,
+        )
+        compiled_output.analysis.metadata.source_file_count = len(selected_files)
 
-        payload = analysis_to_dict(selected_analysis)
+        payload = analysis_to_dict(compiled_output.analysis)
         payload["compiled"] = {
             "source": str(source.path),
             "selected_schema_hash": selected_schema.hash,
@@ -81,7 +91,7 @@ class CompileDataset:
 
         skipped = [
             record.relative_path.as_posix()
-            for record in build_result.files
+            for record in selection.files
             if record.schema_hash != selected_schema.hash
         ]
-        return output_path, skipped
+        return output_path, skipped, list(selection.analysis.warnings)

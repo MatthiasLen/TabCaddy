@@ -9,7 +9,11 @@ from tabcaddy.domain.models import (
 
 
 def profile_mode_for_level(level: DiffLevel) -> ProfileMode:
-    return ProfileMode.DEEP if level != DiffLevel.METADATA else ProfileMode.STANDARD
+    return (
+        ProfileMode.DEEP_NO_HIST
+        if level != DiffLevel.METADATA
+        else ProfileMode.STANDARD
+    )
 
 
 def analyze_pair(

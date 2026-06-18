@@ -5,8 +5,9 @@ from typing import Literal
 
 import polars as pl
 import typer
+from rich.text import Text
 
-from tabcaddy.analysis import AnalysisBuilder, GenerateAnalysis, resolve_source
+from tabcaddy.analysis import GenerateAnalysis, resolve_source
 from tabcaddy.compilation import CompileDataset
 from tabcaddy.diff import DiffDatasets
 from tabcaddy.domain.models import DiffLevel
@@ -39,14 +40,16 @@ def root() -> None:
 )
 def summary(
     source: Path,
-    profile: ProfileMode = typer.Option(ProfileMode.STANDARD, "--profile"),
+    profile: Literal["quick", "standard", "deep"] = typer.Option(
+        "standard", "--profile"
+    ),
 ) -> None:
     source = Path(source).expanduser().resolve()
     console = create_console()
     render = resolve_render_profile(console)
 
     try:
-        result = GenerateAnalysis().run(resolve_source(source), profile)
+        result = GenerateAnalysis().run(resolve_source(source), ProfileMode(profile))
     except (FileNotFoundError, ValueError) as error:
         console.print(f"[red]{error}[/red]")
         raise typer.Exit(code=1) from error
@@ -87,23 +90,33 @@ def compile_dataset(
     interactive: bool = typer.Option(False, "--interactive"),
 ) -> None:
     console = create_console()
+    render = resolve_render_profile(console)
+    compiler = CompileDataset()
     try:
         source = resolve_source(folder)
         selected_schema = schema_index
+        selection_preview = None
 
         if interactive and selected_schema is None:
-            preview = AnalysisBuilder().build(source, ProfileMode.QUICK)
-            if len(preview.analysis.schemas) > 1:
+            selection_preview = compiler.preview_selection(source)
+            if len(selection_preview.analysis.schemas) > 1:
                 console.print(
-                    f"Multiple schemas detected ({len(preview.analysis.schemas)}): "
+                    f"Multiple schemas detected ({len(selection_preview.analysis.schemas)}): "
                 )
-                for index, sch in enumerate(preview.analysis.schemas, start=1):
+                for index, sch in enumerate(
+                    selection_preview.analysis.schemas, start=1
+                ):
                     console.print(
                         f"  [cyan]Schema {index}[/cyan]: {len(sch.columns)} columns, observed in {sch.occurrence_count} files"
                     )
                 selected_schema = typer.prompt("Choose schema number", type=int)
 
-        output_path, skipped = CompileDataset().run(source, output, selected_schema)
+        output_path, skipped, warnings = compiler.run(
+            source,
+            output,
+            selected_schema,
+            precomputed_selection=selection_preview,
+        )
     except (FileExistsError, FileNotFoundError, ValueError) as error:
         console.print(f"[red]{error}[/red]")
         raise typer.Exit(code=1) from error
@@ -112,6 +125,17 @@ def compile_dataset(
     if skipped:
         console.print(
             f"Skipped {len(skipped)} files from non-selected schemas.", style="yellow"
+        )
+    if warnings:
+        warning_text = Text(
+            "\n".join(f"- {warning}" for warning in warnings), style="yellow"
+        )
+        console.print(
+            render.panel(
+                warning_text,
+                title="Warnings",
+                border_style="yellow",
+            )
         )
 
 
@@ -123,15 +147,27 @@ def transform(
     workers: int = typer.Option(1, "--workers", min=1),
 ) -> None:
     console = create_console()
+    render = resolve_render_profile(console)
     try:
         source = resolve_source(input_path)
-        destination = TransformDataset().run(
+        destination, warnings = TransformDataset().run(
             source, transform_path, output_path, workers
         )
     except Exception as error:
         console.print(f"[red]{error}[/red]")
         raise typer.Exit(code=1) from error
     console.print(f"Transformed files written to [green]{destination}[/green]")
+    if warnings:
+        warning_text = Text(
+            "\n".join(f"- {warning}" for warning in warnings), style="yellow"
+        )
+        console.print(
+            render.panel(
+                warning_text,
+                title="Warnings",
+                border_style="yellow",
+            )
+        )
 
 
 @app.command(

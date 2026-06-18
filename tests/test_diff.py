@@ -8,6 +8,7 @@ from pathlib import Path
 import polars as pl
 
 from tabcaddy.analysis import GenerateAnalysis, resolve_source
+from tabcaddy.diff.common import profile_mode_for_level
 from tabcaddy.diff import DiffDatasets, compare_analyses
 from tabcaddy.domain.models import (
     ColumnStatistics,
@@ -19,10 +20,17 @@ from tabcaddy.domain.models import (
     DiffLevel,
     DiffReport,
     DiffSummary,
+    ProfileMode,
     SchemaSignature,
     SourceType,
 )
 from tabcaddy.shared.serialization import analysis_to_dict, diff_report_to_dict
+
+
+def test_profile_mode_for_level_uses_internal_no_hist_mode_for_diff() -> None:
+    assert profile_mode_for_level(DiffLevel.METADATA) == ProfileMode.STANDARD
+    assert profile_mode_for_level(DiffLevel.STATISTICS) == ProfileMode.DEEP_NO_HIST
+    assert profile_mode_for_level(DiffLevel.FULL) == ProfileMode.DEEP_NO_HIST
 
 
 def _write_compiled_dataset(

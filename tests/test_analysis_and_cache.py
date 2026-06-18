@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 import json
 from pathlib import Path
 
@@ -8,10 +9,12 @@ import polars as pl
 
 from tabcaddy.analysis import (
     AnalysisBuilder,
+    AnalysisBuildResult,
     CacheManager,
     GenerateAnalysis,
     resolve_source,
 )
+from tabcaddy.domain.models import DatasetAnalysis, DatasetMetadata, SchemaSignature
 from tabcaddy.domain.models import ProfileMode
 from tabcaddy.shared.dataset_io import read_compiled_analysis
 
@@ -78,6 +81,21 @@ def test_analysis_builder_handles_timezone_aware_datetimes(tmp_path: Path) -> No
     assert (
         analysis.statistics.columns["event_ts"].max_value == "2024-01-02T09:30:00+00:00"
     )
+
+
+def test_internal_deep_mode_skips_histograms_but_keeps_hashes(
+    homogeneous_folder,
+) -> None:
+    analysis = (
+        AnalysisBuilder()
+        .build(resolve_source(homogeneous_folder), ProfileMode.DEEP_NO_HIST)
+        .analysis
+    )
+
+    assert analysis.metadata.column_hashes is not None
+    assert analysis.statistics is not None
+    assert analysis.statistics.columns["value"].unique_estimate is not None
+    assert analysis.statistics.columns["value"].histogram is None
 
 
 def test_analysis_builder_skips_corrupt_files_when_building_statistics(
@@ -166,3 +184,82 @@ def test_read_compiled_analysis_returns_none_for_invalid_payload_shape(
     )
 
     assert read_compiled_analysis(compiled) is None
+
+
+def test_generate_analysis_checks_cache_before_compiled_metadata_path(
+    tmp_path: Path,
+) -> None:
+    compiled = tmp_path / "compiled"
+    data_dir = compiled / "data"
+    data_dir.mkdir(parents=True)
+    pl.DataFrame([{"id": 1, "value": 10.0}]).write_parquet(
+        data_dir / "part-001.parquet"
+    )
+    (compiled / "metadata.json").write_text(
+        json.dumps(
+            {
+                "metadata": {
+                    "version": 1,
+                    "created_at": "2026-01-01T00:00:00+00:00",
+                    "row_count": 1,
+                    "column_count": 2,
+                    "source_file_count": 1,
+                    "schema_hash": "schema-1",
+                    "column_hashes": None,
+                },
+                "schemas": [
+                    {
+                        "columns": [
+                            {"name": "id", "dtype": "Int64"},
+                            {"name": "value", "dtype": "Float64"},
+                        ],
+                        "hash": "schema-1",
+                        "occurrence_count": 1,
+                    }
+                ],
+                "statistics": None,
+                "warnings": [],
+                "compiled": {
+                    "source": "fixture-source",
+                    "selected_schema_hash": "schema-1",
+                    "written_parts": ["data/part-001.parquet"],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    source = resolve_source(compiled)
+
+    cached_result = AnalysisBuildResult(
+        analysis=DatasetAnalysis(
+            metadata=DatasetMetadata(
+                version=1,
+                created_at=datetime(2026, 1, 1, tzinfo=UTC),
+                row_count=123,
+                column_count=1,
+                source_file_count=1,
+                schema_hash="cached",
+                column_hashes=None,
+            ),
+            schemas=[SchemaSignature(columns=[], hash="cached", occurrence_count=1)],
+            statistics=None,
+            warnings=[],
+        ),
+        files=[],
+    )
+    cache = CacheManager(tmp_path / ".tabcaddy" / "cache")
+    cache.set(source, ProfileMode.STANDARD, cached_result)
+
+    class FailOnCompiledMetadataBuilder:
+        def load_compiled_result(self, source):
+            raise AssertionError("cache hit should not call load_compiled_result")
+
+        def build(self, source, profile_mode):
+            raise AssertionError("cache hit should not rebuild analysis")
+
+    result = GenerateAnalysis(
+        analysis_builder=FailOnCompiledMetadataBuilder(),
+        cache_manager=cache,
+    ).run(source, ProfileMode.STANDARD)
+
+    assert result == cached_result

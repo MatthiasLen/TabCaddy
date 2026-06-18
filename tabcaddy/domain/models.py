@@ -17,6 +17,7 @@ class ProfileMode(str, Enum):
     QUICK = "quick"
     STANDARD = "standard"
     DEEP = "deep"
+    DEEP_NO_HIST = "_deep_no_hist"
 
 
 class DiffLevel(str, Enum):
