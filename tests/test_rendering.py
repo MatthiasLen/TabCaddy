@@ -19,6 +19,7 @@ from tabcaddy.domain.models import SchemaSignature
 from tabcaddy.analysis.schema import FileSchemaRecord
 from tabcaddy.rendering.console import create_console
 from tabcaddy.rendering.console import RenderProfile
+from tabcaddy.rendering.charts.line_chart import render_line_chart
 from tabcaddy.rendering.views.diff import build_diff_view
 from tabcaddy.rendering.views.schema import build_schema_view
 from tabcaddy.rendering.views.summary import build_summary_view
@@ -193,3 +194,17 @@ def test_diff_render_shows_row_level_sections() -> None:
     assert "Updated Rows" in output
     assert "Added Key Samples" in output
     assert "customer_id=42" in output
+
+
+def test_line_chart_respects_x_spacing_with_resampling() -> None:
+    dense_x = [0.0, 1.0, 2.0, 3.0]
+    dense_y = [0.0, 10.0, 20.0, 30.0]
+    sparse_x = [0.0, 100.0, 101.0, 102.0]
+    sparse_y = [0.0, 10.0, 20.0, 30.0]
+
+    dense_chart = render_line_chart(dense_y, x_values=dense_x, width=40)
+    sparse_chart = render_line_chart(sparse_y, x_values=sparse_x, width=40)
+
+    assert dense_chart
+    assert sparse_chart
+    assert dense_chart != sparse_chart

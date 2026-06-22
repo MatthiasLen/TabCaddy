@@ -54,6 +54,7 @@ uv add tabcaddy
 - `summary`: profile counts, schemas, stats, and warnings
 - `head`: preview rows from files, folders, or compiled datasets
 - `schema`: inspect schema groups and drift-focused schema diagnostics
+- `plot`: plot one column against another as a line or scatter chart
 - `compile`: materialize a selected schema into a compiled Parquet dataset
 - `scaffold-transform`: generate a transform starter from observed schemas
 - `transform`: apply Python transforms to file, folder, or compiled inputs
@@ -174,6 +175,19 @@ tabcaddy schema <source>
 ```
 
 Focused schema analysis for schema groups, type changes, and non-dominant files. This command always uses quick schema analysis and does not take `--profile`.
+
+`plot`
+
+```bash
+tabcaddy plot <source> <column_x> <column_y> [--kind auto|line|scatter] [--aggregate-x mean|median|min|max|sum|count] [--fail-on-x-duplicates] [--fail-on-unsorted-x]
+```
+
+Plots one column against another in the terminal.
+
+- `--kind auto` picks `line` for temporal `x` and for numeric `x` only when values are monotonic and unique; otherwise it picks `scatter`
+- line plots fail on duplicate `x` by default unless `--aggregate-x` is provided
+- line plots auto-sort `x` by default; use `--fail-on-unsorted-x` for strict mode
+- rows with null values or non-numeric `y` values are dropped and reported as warnings
 
 `compile`
 

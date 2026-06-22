@@ -13,11 +13,13 @@ from tabcaddy.diff import DiffDatasets
 from tabcaddy.domain.models import DiffLevel
 from tabcaddy.domain.models import ProfileMode
 from tabcaddy.merge import MergeDatasets
+from tabcaddy.plot import PlotDataset
 from tabcaddy.preview import HeadDataset
 from tabcaddy.rendering.console import create_console
 from tabcaddy.rendering.console import resolve_render_profile
 from tabcaddy.rendering.views.diff import build_diff_view
 from tabcaddy.rendering.views.head import build_file_head_view, build_folder_head_view
+from tabcaddy.rendering.views.plot import build_plot_view
 from tabcaddy.rendering.views.schema import build_schema_view
 from tabcaddy.rendering.views.summary import build_summary_view
 from tabcaddy.transforms import ScaffoldTransform, TransformDataset
@@ -314,6 +316,59 @@ def head(
                 frame.df, frame.path, render=render, show_meta=show_meta
             )
         )
+
+
+@app.command(help="Plot one column against another using line or scatter charts")
+def plot(
+    source: Path,
+    column_x: str,
+    column_y: str,
+    kind: Literal["auto", "line", "scatter"] = typer.Option(
+        "auto",
+        "--kind",
+        help=(
+            "Chart kind. auto chooses line for temporal x and for numeric x "
+            "only when values are monotonic and unique."
+        ),
+    ),
+    aggregate_x: Literal["mean", "median", "min", "max", "sum", "count"]
+    | None = typer.Option(
+        None,
+        "--aggregate-x",
+        help="Optional y-aggregation applied per x value before plotting.",
+    ),
+    fail_on_x_duplicates: bool = typer.Option(
+        False,
+        "--fail-on-x-duplicates",
+        help="Fail when duplicate x-values are present.",
+    ),
+    fail_on_unsorted_x: bool = typer.Option(
+        False,
+        "--fail-on-unsorted-x",
+        help="Fail instead of auto-sorting x-values for line plots.",
+    ),
+) -> None:
+    console = create_console()
+    render = resolve_render_profile(console)
+
+    try:
+        result = PlotDataset().run(
+            resolve_source(source),
+            column_x,
+            column_y,
+            kind=kind,
+            aggregate_x=aggregate_x,
+            fail_on_x_duplicates=fail_on_x_duplicates,
+            fail_on_unsorted_x=fail_on_unsorted_x,
+        )
+    except pl.exceptions.PolarsError as error:
+        console.print(f"Failed to read input data for plot: {error}")
+        raise typer.Exit(code=1) from error
+    except (FileNotFoundError, ValueError) as error:
+        console.print(f"[red]{error}[/red]")
+        raise typer.Exit(code=1) from error
+
+    console.print(build_plot_view(result, render=render))
 
 
 @app.command(

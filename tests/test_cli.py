@@ -759,6 +759,228 @@ def test_summary_and_schema_missing_source_fail_without_traceback(
     assert "Traceback" not in schema_result.stdout
 
 
+def test_plot_line_renders_for_numeric_columns(tmp_path: Path) -> None:
+    csv_file = tmp_path / "series.csv"
+    _write_csv(
+        csv_file,
+        [
+            {"x": 1, "y": 10.0},
+            {"x": 2, "y": 12.5},
+            {"x": 3, "y": 15.0},
+        ],
+    )
+
+    result = runner.invoke(app, ["plot", str(csv_file), "x", "y", "--kind", "line"])
+
+    assert result.exit_code == 0
+    assert "Plot" in result.stdout
+    assert "Chart" in result.stdout
+    assert "Kind" in result.stdout
+    assert "line" in result.stdout
+
+
+def test_plot_line_fails_on_duplicate_x_without_aggregation(tmp_path: Path) -> None:
+    csv_file = tmp_path / "duplicates.csv"
+    _write_csv(
+        csv_file,
+        [
+            {"x": 1, "y": 10.0},
+            {"x": 1, "y": 12.0},
+            {"x": 2, "y": 15.0},
+        ],
+    )
+
+    result = runner.invoke(app, ["plot", str(csv_file), "x", "y", "--kind", "line"])
+
+    assert result.exit_code == 1
+    assert "Duplicate x-values detected" in result.stdout
+    assert "Traceback" not in result.stdout
+
+
+def test_plot_line_aggregates_duplicate_x_with_requested_strategy(
+    tmp_path: Path,
+) -> None:
+    csv_file = tmp_path / "duplicates.csv"
+    _write_csv(
+        csv_file,
+        [
+            {"x": 1, "y": 10.0},
+            {"x": 1, "y": 12.0},
+            {"x": 2, "y": 15.0},
+        ],
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "plot",
+            str(csv_file),
+            "x",
+            "y",
+            "--kind",
+            "line",
+            "--aggregate-x",
+            "mean",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Aggregated" in result.stdout
+    assert "yes" in result.stdout
+
+
+def test_plot_line_auto_sorts_unsorted_x_by_default(tmp_path: Path) -> None:
+    csv_file = tmp_path / "unsorted.csv"
+    _write_csv(
+        csv_file,
+        [
+            {"x": 3, "y": 30.0},
+            {"x": 1, "y": 10.0},
+            {"x": 2, "y": 20.0},
+        ],
+    )
+
+    result = runner.invoke(app, ["plot", str(csv_file), "x", "y", "--kind", "line"])
+
+    assert result.exit_code == 0
+    assert "Auto-sorted" in result.stdout
+    assert "x-values were auto-sorted" in result.stdout
+
+
+def test_plot_line_fails_for_unsorted_x_when_strict_option_is_set(
+    tmp_path: Path,
+) -> None:
+    csv_file = tmp_path / "unsorted.csv"
+    _write_csv(
+        csv_file,
+        [
+            {"x": 3, "y": 30.0},
+            {"x": 1, "y": 10.0},
+            {"x": 2, "y": 20.0},
+        ],
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "plot",
+            str(csv_file),
+            "x",
+            "y",
+            "--kind",
+            "line",
+            "--fail-on-unsorted-x",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "x-values are not sorted" in result.stdout
+    assert "Traceback" not in result.stdout
+
+
+def test_plot_scatter_encodes_categorical_x_values(tmp_path: Path) -> None:
+    csv_file = tmp_path / "categories.csv"
+    _write_csv(
+        csv_file,
+        [
+            {"category": "A", "y": 10.0},
+            {"category": "B", "y": 12.0},
+            {"category": "A", "y": 8.0},
+        ],
+    )
+
+    result = runner.invoke(
+        app,
+        ["plot", str(csv_file), "category", "y", "--kind", "scatter"],
+    )
+
+    assert result.exit_code == 0
+    assert "scatter" in result.stdout
+    assert "encoded categorical x-values" in result.stdout
+
+
+def test_plot_fails_when_column_is_missing(tmp_path: Path) -> None:
+    csv_file = tmp_path / "series.csv"
+    _write_csv(csv_file, [{"x": 1, "y": 10.0}])
+
+    result = runner.invoke(app, ["plot", str(csv_file), "missing", "y"])
+
+    assert result.exit_code == 1
+    assert "Column not found" in result.stdout
+
+
+def test_plot_auto_selects_line_for_sorted_numeric_x(tmp_path: Path) -> None:
+    csv_file = tmp_path / "auto_line.csv"
+    _write_csv(
+        csv_file,
+        [
+            {"x": 1, "y": 10.0},
+            {"x": 2, "y": 12.0},
+            {"x": 3, "y": 14.0},
+        ],
+    )
+
+    result = runner.invoke(app, ["plot", str(csv_file), "x", "y"])
+
+    assert result.exit_code == 0
+    assert "Kind" in result.stdout
+    assert "line" in result.stdout
+
+
+def test_plot_auto_selects_scatter_for_unsorted_numeric_x(tmp_path: Path) -> None:
+    csv_file = tmp_path / "auto_scatter_unsorted.csv"
+    _write_csv(
+        csv_file,
+        [
+            {"x": 3, "y": 30.0},
+            {"x": 1, "y": 10.0},
+            {"x": 2, "y": 20.0},
+        ],
+    )
+
+    result = runner.invoke(app, ["plot", str(csv_file), "x", "y"])
+
+    assert result.exit_code == 0
+    assert "scatter" in result.stdout
+    assert "not monotonic" in result.stdout
+
+
+def test_plot_auto_selects_scatter_for_duplicate_numeric_x(tmp_path: Path) -> None:
+    csv_file = tmp_path / "auto_scatter_duplicates.csv"
+    _write_csv(
+        csv_file,
+        [
+            {"x": 1, "y": 10.0},
+            {"x": 1, "y": 12.0},
+            {"x": 2, "y": 20.0},
+        ],
+    )
+
+    result = runner.invoke(app, ["plot", str(csv_file), "x", "y"])
+
+    assert result.exit_code == 0
+    assert "scatter" in result.stdout
+    assert "contain duplicates" in result.stdout
+
+
+def test_plot_line_rejects_categorical_x_values(tmp_path: Path) -> None:
+    csv_file = tmp_path / "categorical_line.csv"
+    _write_csv(
+        csv_file,
+        [
+            {"x": "A", "y": 10.0},
+            {"x": "B", "y": 12.0},
+            {"x": "C", "y": 14.0},
+        ],
+    )
+
+    result = runner.invoke(app, ["plot", str(csv_file), "x", "y", "--kind", "line"])
+
+    assert result.exit_code == 1
+    assert "Line plots require numeric or temporal x-values" in result.stdout
+    assert "Traceback" not in result.stdout
+
+
 def test_transform_user_script_failures_fail_without_traceback(
     tmp_path: Path,
 ) -> None:
