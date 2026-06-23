@@ -981,6 +981,87 @@ def test_plot_line_rejects_categorical_x_values(tmp_path: Path) -> None:
     assert "Traceback" not in result.stdout
 
 
+def test_plot_folder_renders_stacked_per_file_plots(tmp_path: Path) -> None:
+    folder = tmp_path / "plots"
+    folder.mkdir()
+    _write_csv(folder / "a.csv", [{"x": 1, "y": 10.0}, {"x": 2, "y": 12.0}])
+    _write_csv(folder / "b.csv", [{"x": 1, "y": 20.0}, {"x": 2, "y": 22.0}])
+
+    result = runner.invoke(app, ["plot", str(folder), "x", "y", "--kind", "line"])
+
+    assert result.exit_code == 0
+    assert "Folder Plot Summary" in result.stdout
+    assert "File 1: a.csv" in result.stdout
+    assert "File 2: b.csv" in result.stdout
+
+
+def test_plot_folder_limits_default_number_of_files(tmp_path: Path) -> None:
+    folder = tmp_path / "many_plots"
+    folder.mkdir()
+    for index in range(7):
+        _write_csv(
+            folder / f"{index:02d}.csv",
+            [{"x": 1, "y": float(index)}, {"x": 2, "y": float(index + 1)}],
+        )
+
+    result = runner.invoke(app, ["plot", str(folder), "x", "y", "--kind", "line"])
+
+    assert result.exit_code == 0
+    assert "File 5:" in result.stdout
+    assert "File 6:" not in result.stdout
+    assert "Folder contains 7 files; plotted first 5." in result.stdout
+
+
+def test_plot_folder_respects_custom_file_limit(tmp_path: Path) -> None:
+    folder = tmp_path / "many_plots"
+    folder.mkdir()
+    for index in range(7):
+        _write_csv(
+            folder / f"{index:02d}.csv",
+            [{"x": 1, "y": float(index)}, {"x": 2, "y": float(index + 1)}],
+        )
+
+    result = runner.invoke(
+        app,
+        [
+            "plot",
+            str(folder),
+            "x",
+            "y",
+            "--kind",
+            "line",
+            "--folder-max-files",
+            "7",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "File 7:" in result.stdout
+    assert "plotted first 5" not in result.stdout
+
+
+def test_plot_folder_limit_rejects_zero(tmp_path: Path) -> None:
+    folder = tmp_path / "plots"
+    folder.mkdir()
+    _write_csv(folder / "a.csv", [{"x": 1, "y": 10.0}])
+
+    result = runner.invoke(
+        app,
+        [
+            "plot",
+            str(folder),
+            "x",
+            "y",
+            "--folder-max-files",
+            "0",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "--folder-max-files must be greater than or equal to 1." in result.stdout
+    assert "Traceback" not in result.stdout
+
+
 def test_transform_user_script_failures_fail_without_traceback(
     tmp_path: Path,
 ) -> None:

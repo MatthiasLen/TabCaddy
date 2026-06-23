@@ -347,6 +347,14 @@ def plot(
         "--fail-on-unsorted-x",
         help="Fail instead of auto-sorting x-values for line plots.",
     ),
+    folder_max_files: int = typer.Option(
+        5,
+        "--folder-max-files",
+        help=(
+            "Maximum number of files to plot from a folder input. "
+            "Use a larger value to include more files."
+        ),
+    ),
 ) -> None:
     console = create_console()
     render = resolve_render_profile(console)
@@ -360,6 +368,7 @@ def plot(
             aggregate_x=aggregate_x,
             fail_on_x_duplicates=fail_on_x_duplicates,
             fail_on_unsorted_x=fail_on_unsorted_x,
+            folder_max_files=folder_max_files,
         )
     except pl.exceptions.PolarsError as error:
         console.print(f"Failed to read input data for plot: {error}")

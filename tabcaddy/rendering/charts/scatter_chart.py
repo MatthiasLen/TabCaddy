@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 import math
+from typing import Callable
 
 
 def _format_axis(value: float) -> str:
@@ -18,6 +19,7 @@ def render_scatter_chart(
     width: int = 48,
     height: int = 12,
     point: str = "•",
+    x_tick_formatter: Callable[[float], str] | None = None,
 ) -> str:
     if not points:
         return ""
@@ -56,10 +58,16 @@ def render_scatter_chart(
         lines.append(f"{_format_axis(y_value):>{label_width}} |{''.join(row)}")
 
     lines.append(" " * (label_width + 1) + "+" + "-" * width)
+    min_x_label = (
+        x_tick_formatter(min_x) if x_tick_formatter is not None else _format_axis(min_x)
+    )
+    max_x_label = (
+        x_tick_formatter(max_x) if x_tick_formatter is not None else _format_axis(max_x)
+    )
     lines.append(
         " " * (label_width + 2)
-        + f"{_format_axis(min_x)}"
-        + " " * max(1, width - len(_format_axis(min_x)) - len(_format_axis(max_x)))
-        + _format_axis(max_x)
+        + min_x_label
+        + " " * max(1, width - len(min_x_label) - len(max_x_label))
+        + max_x_label
     )
     return "\n".join(lines)

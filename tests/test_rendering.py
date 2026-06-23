@@ -17,6 +17,7 @@ from tabcaddy.domain.models import RowFieldDelta
 from tabcaddy.domain.models import DiffSummary
 from tabcaddy.domain.models import SchemaSignature
 from tabcaddy.analysis.schema import FileSchemaRecord
+from tabcaddy.rendering.charts.axis_formatters import format_epoch_seconds_utc
 from tabcaddy.rendering.console import create_console
 from tabcaddy.rendering.console import RenderProfile
 from tabcaddy.rendering.charts.line_chart import render_line_chart
@@ -219,3 +220,34 @@ def test_scatter_chart_clamps_small_dimensions() -> None:
 
     assert zero_dim_chart
     assert one_dim_chart
+
+
+def test_line_chart_adds_utc_footer_for_temporal_x() -> None:
+    x_values = [
+        datetime(2026, 2, 7, tzinfo=timezone.utc).timestamp(),
+        datetime(2026, 2, 8, tzinfo=timezone.utc).timestamp(),
+        datetime(2026, 2, 9, tzinfo=timezone.utc).timestamp(),
+    ]
+    y_values = [1.0, 2.0, 3.0]
+
+    chart = render_line_chart(
+        y_values,
+        x_values=x_values,
+        x_tick_formatter=format_epoch_seconds_utc,
+        width=30,
+    )
+
+    assert "2026-02-07" in chart
+    assert "2026-02-09" in chart
+
+
+def test_scatter_chart_formats_temporal_x_labels_as_utc_dates() -> None:
+    points = [
+        (datetime(2026, 2, 7, tzinfo=timezone.utc).timestamp(), 1.0),
+        (datetime(2026, 2, 9, tzinfo=timezone.utc).timestamp(), 2.0),
+    ]
+
+    chart = render_scatter_chart(points, x_tick_formatter=format_epoch_seconds_utc)
+
+    assert "2026-02-07" in chart
+    assert "2026-02-09" in chart

@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, time
 from decimal import Decimal
 import math
+from pathlib import Path
 from typing import Any, Literal
 
 import polars as pl
@@ -15,6 +16,7 @@ from tabcaddy.shared.dataset_io import scan_dataframe, scan_parquet_dataset
 
 _SUPPORTED_AGGREGATIONS = {"mean", "median", "min", "max", "sum", "count"}
 _NAIVE_UNIX_EPOCH = datetime(1970, 1, 1)
+_DEFAULT_FOLDER_MAX_FILES = 5
 
 
 @dataclass
@@ -22,6 +24,9 @@ class PlotResult:
     chart_kind: Literal["line", "scatter"]
     x_column: str
     y_column: str
+    x_axis_kind: Literal["numeric", "temporal", "categorical"]
+    x_axis_time_unit: Literal["epoch_seconds"] | None
+    x_axis_timezone: Literal["UTC"] | None
     row_count: int
     plotted_rows: int
     dropped_rows: int
@@ -32,6 +37,21 @@ class PlotResult:
     line_x_values: list[float] = field(default_factory=list)
     line_values: list[float] = field(default_factory=list)
     scatter_points: list[tuple[float, float]] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+
+
+@dataclass
+class PlotFileResult:
+    path: Path
+    result: PlotResult
+
+
+@dataclass
+class PlotRunResult:
+    plots: list[PlotFileResult]
+    total_files: int
+    plotted_files: int
+    skipped_files: int
     warnings: list[str] = field(default_factory=list)
 
 
@@ -47,9 +67,101 @@ class PlotDataset:
         | None = None,
         fail_on_x_duplicates: bool = False,
         fail_on_unsorted_x: bool = False,
-    ) -> PlotResult:
-        lazyframe = self._build_lazyframe(source)
+        folder_max_files: int = _DEFAULT_FOLDER_MAX_FILES,
+    ) -> PlotRunResult:
+        if folder_max_files < 1:
+            raise ValueError("--folder-max-files must be greater than or equal to 1.")
 
+        if source.source_type == SourceType.FOLDER:
+            return self._run_for_folder(
+                source,
+                x_column,
+                y_column,
+                kind=kind,
+                aggregate_x=aggregate_x,
+                fail_on_x_duplicates=fail_on_x_duplicates,
+                fail_on_unsorted_x=fail_on_unsorted_x,
+                folder_max_files=folder_max_files,
+            )
+
+        lazyframe = self._build_lazyframe(source)
+        plot = self._run_for_lazyframe(
+            lazyframe,
+            x_column,
+            y_column,
+            kind=kind,
+            aggregate_x=aggregate_x,
+            fail_on_x_duplicates=fail_on_x_duplicates,
+            fail_on_unsorted_x=fail_on_unsorted_x,
+        )
+
+        return PlotRunResult(
+            plots=[PlotFileResult(path=source.path, result=plot)],
+            total_files=1,
+            plotted_files=1,
+            skipped_files=0,
+        )
+
+    def _run_for_folder(
+        self,
+        source: DatasetSource,
+        x_column: str,
+        y_column: str,
+        *,
+        kind: Literal["auto", "line", "scatter"],
+        aggregate_x: Literal["mean", "median", "min", "max", "sum", "count"] | None,
+        fail_on_x_duplicates: bool,
+        fail_on_unsorted_x: bool,
+        folder_max_files: int,
+    ) -> PlotRunResult:
+        files = iter_dataset_files(source)
+        if not files:
+            raise ValueError(f"No supported files found under: {source.path}")
+
+        selected_files = files[:folder_max_files]
+        file_results: list[PlotFileResult] = []
+        for path in selected_files:
+            lazyframe = scan_dataframe(path)
+            result = self._run_for_lazyframe(
+                lazyframe,
+                x_column,
+                y_column,
+                kind=kind,
+                aggregate_x=aggregate_x,
+                fail_on_x_duplicates=fail_on_x_duplicates,
+                fail_on_unsorted_x=fail_on_unsorted_x,
+            )
+            file_results.append(PlotFileResult(path=path, result=result))
+
+        warnings: list[str] = []
+        skipped_files = max(0, len(files) - len(selected_files))
+        if skipped_files > 0:
+            warnings.append(
+                (
+                    f"Folder contains {len(files)} files; plotted first {len(selected_files)}. "
+                    f"Increase --folder-max-files to at least {len(files)} to plot all files."
+                )
+            )
+
+        return PlotRunResult(
+            plots=file_results,
+            total_files=len(files),
+            plotted_files=len(file_results),
+            skipped_files=skipped_files,
+            warnings=warnings,
+        )
+
+    def _run_for_lazyframe(
+        self,
+        lazyframe: pl.LazyFrame,
+        x_column: str,
+        y_column: str,
+        *,
+        kind: Literal["auto", "line", "scatter"],
+        aggregate_x: Literal["mean", "median", "min", "max", "sum", "count"] | None,
+        fail_on_x_duplicates: bool,
+        fail_on_unsorted_x: bool,
+    ) -> PlotResult:
         schema = lazyframe.collect_schema()
         if x_column not in schema:
             raise ValueError(f"Column not found: {x_column}")
@@ -58,6 +170,13 @@ class PlotDataset:
 
         x_dtype = schema[x_column]
         y_dtype = schema[y_column]
+        x_axis_kind = self._infer_x_axis_kind(x_dtype)
+        x_axis_time_unit: Literal["epoch_seconds"] | None = None
+        x_axis_timezone: Literal["UTC"] | None = None
+        if x_axis_kind == "temporal":
+            x_axis_time_unit = "epoch_seconds"
+            x_axis_timezone = "UTC"
+
         if y_dtype.is_nested():
             raise ValueError(
                 f"Column '{y_column}' is not plottable (nested type: {y_dtype})."
@@ -65,11 +184,18 @@ class PlotDataset:
 
         warnings: list[str] = []
 
+        # Boolean cannot be cast directly to Float64 in Polars; route via Int8 (true=1, false=0).
+        y_to_float: pl.Expr
+        if y_dtype == pl.Boolean:
+            y_to_float = pl.col(y_column).cast(pl.Int8).cast(pl.Float64)
+        else:
+            y_to_float = pl.col(y_column).cast(pl.Float64, strict=False)
+
         frame = lazyframe.select(
             [
                 pl.col(x_column).alias("_x"),
                 pl.col(y_column).alias("_y_raw"),
-                pl.col(y_column).cast(pl.Float64, strict=False).alias("_y"),
+                y_to_float.alias("_y"),
             ]
         ).collect(engine="auto")
 
@@ -167,6 +293,9 @@ class PlotDataset:
                 chart_kind="line",
                 x_column=x_column,
                 y_column=y_column,
+                x_axis_kind=x_axis_kind,
+                x_axis_time_unit=x_axis_time_unit,
+                x_axis_timezone=x_axis_timezone,
                 row_count=row_count,
                 plotted_rows=len(line_values),
                 dropped_rows=dropped_rows,
@@ -190,6 +319,9 @@ class PlotDataset:
             chart_kind="scatter",
             x_column=x_column,
             y_column=y_column,
+            x_axis_kind=x_axis_kind,
+            x_axis_time_unit=x_axis_time_unit,
+            x_axis_timezone=x_axis_timezone,
             row_count=row_count,
             plotted_rows=len(scatter_points),
             dropped_rows=dropped_rows,
@@ -234,6 +366,15 @@ class PlotDataset:
                 return "scatter"
             return "line"
         return "scatter"
+
+    def _infer_x_axis_kind(
+        self, dtype: pl.DataType
+    ) -> Literal["numeric", "temporal", "categorical"]:
+        if self._is_temporal_dtype(dtype):
+            return "temporal"
+        if self._is_numeric_dtype(dtype):
+            return "numeric"
+        return "categorical"
 
     def _duplicate_count(self, frame: pl.DataFrame) -> int:
         x_values = frame.get_column("_x")

@@ -184,6 +184,8 @@ tabcaddy plot <source> <column_x> <column_y> [--kind auto|line|scatter] [--aggre
 
 Plots one column against another in the terminal.
 
+- `column_x`: numeric (`Int`, `Float`, `Decimal`) or temporal (`Date`, `Datetime`, `Time`, `Duration`); categorical/string x is accepted for scatter only
+- `column_y`: must be numeric, boolean (`true=1`, `false=0`), or castable to `Float64`; strings and nested types are not supported
 - `--kind auto` picks `line` for temporal `x` and for numeric `x` only when values are monotonic and unique; otherwise it picks `scatter`
 - line plots fail on duplicate `x` by default unless `--aggregate-x` is provided
 - line plots auto-sort `x` by default; use `--fail-on-unsorted-x` for strict mode
