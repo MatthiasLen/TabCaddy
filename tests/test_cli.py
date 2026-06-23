@@ -6,11 +6,19 @@ from pathlib import Path
 import polars as pl
 from typer.testing import CliRunner
 
+from tabcaddy import __version__
 from tabcaddy.cli.app import app
 from tabcaddy.compilation import ValidationResult
 
 
 runner = CliRunner()
+
+
+def test_version_option_displays_current_version() -> None:
+    result = runner.invoke(app, ["--version"])
+
+    assert result.exit_code == 0
+    assert result.stdout.strip() == __version__
 
 
 def _write_csv(path: Path, rows: list[dict]) -> None:
@@ -757,6 +765,383 @@ def test_summary_and_schema_missing_source_fail_without_traceback(
     assert schema_result.exit_code == 1
     assert "Source does not exist" in schema_result.stdout
     assert "Traceback" not in schema_result.stdout
+
+
+def test_plot_line_renders_for_numeric_columns(tmp_path: Path) -> None:
+    csv_file = tmp_path / "series.csv"
+    _write_csv(
+        csv_file,
+        [
+            {"x": 1, "y": 10.0},
+            {"x": 2, "y": 12.5},
+            {"x": 3, "y": 15.0},
+        ],
+    )
+
+    result = runner.invoke(app, ["plot", str(csv_file), "x", "y", "--kind", "line"])
+
+    assert result.exit_code == 0
+    assert "Plot" in result.stdout
+    assert "y" in result.stdout
+    assert "Kind" in result.stdout
+    assert "line" in result.stdout
+
+
+def test_plot_multiple_y_columns_renders_stacked_sections(tmp_path: Path) -> None:
+    csv_file = tmp_path / "multi_series.csv"
+    _write_csv(
+        csv_file,
+        [
+            {"x": 1, "y_a": 10.0, "y_b": 100.0},
+            {"x": 2, "y_a": 12.5, "y_b": 110.0},
+            {"x": 3, "y_a": 15.0, "y_b": 120.0},
+        ],
+    )
+
+    result = runner.invoke(
+        app,
+        ["plot", str(csv_file), "x", "y_a", "y_b", "--kind", "line"],
+    )
+
+    assert result.exit_code == 0
+    assert "Plot" in result.stdout
+    assert "Y" in result.stdout
+    assert "y_a" in result.stdout
+    assert "y_b" in result.stdout
+
+
+def test_plot_line_uses_nearest_interpolation_when_requested(tmp_path: Path) -> None:
+    csv_file = tmp_path / "series.csv"
+    _write_csv(
+        csv_file,
+        [
+            {"x": 0, "y": 0.0},
+            {"x": 10, "y": 10.0},
+            {"x": 11, "y": 30.0},
+        ],
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "plot",
+            str(csv_file),
+            "x",
+            "y",
+            "--kind",
+            "line",
+            "--interpolation",
+            "nearest",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Interpolation" in result.stdout
+    assert "nearest" in result.stdout
+
+
+def test_plot_line_fails_on_duplicate_x_without_aggregation(tmp_path: Path) -> None:
+    csv_file = tmp_path / "duplicates.csv"
+    _write_csv(
+        csv_file,
+        [
+            {"x": 1, "y": 10.0},
+            {"x": 1, "y": 12.0},
+            {"x": 2, "y": 15.0},
+        ],
+    )
+
+    result = runner.invoke(app, ["plot", str(csv_file), "x", "y", "--kind", "line"])
+
+    assert result.exit_code == 1
+    assert "Duplicate x-values detected" in result.stdout
+    assert "Traceback" not in result.stdout
+
+
+def test_plot_line_aggregates_duplicate_x_with_requested_strategy(
+    tmp_path: Path,
+) -> None:
+    csv_file = tmp_path / "duplicates.csv"
+    _write_csv(
+        csv_file,
+        [
+            {"x": 1, "y": 10.0},
+            {"x": 1, "y": 12.0},
+            {"x": 2, "y": 15.0},
+        ],
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "plot",
+            str(csv_file),
+            "x",
+            "y",
+            "--kind",
+            "line",
+            "--aggregate-x",
+            "mean",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Aggregated" in result.stdout
+    assert "yes" in result.stdout
+
+
+def test_plot_line_auto_sorts_unsorted_x_by_default(tmp_path: Path) -> None:
+    csv_file = tmp_path / "unsorted.csv"
+    _write_csv(
+        csv_file,
+        [
+            {"x": 3, "y": 30.0},
+            {"x": 1, "y": 10.0},
+            {"x": 2, "y": 20.0},
+        ],
+    )
+
+    result = runner.invoke(app, ["plot", str(csv_file), "x", "y", "--kind", "line"])
+
+    assert result.exit_code == 0
+    assert "Auto-sorted" in result.stdout
+    assert "x-values were auto-sorted" in result.stdout
+
+
+def test_plot_line_fails_for_unsorted_x_when_strict_option_is_set(
+    tmp_path: Path,
+) -> None:
+    csv_file = tmp_path / "unsorted.csv"
+    _write_csv(
+        csv_file,
+        [
+            {"x": 3, "y": 30.0},
+            {"x": 1, "y": 10.0},
+            {"x": 2, "y": 20.0},
+        ],
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "plot",
+            str(csv_file),
+            "x",
+            "y",
+            "--kind",
+            "line",
+            "--fail-on-x-unsorted",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "x-values are not sorted" in result.stdout
+    assert "Traceback" not in result.stdout
+
+
+def test_plot_scatter_encodes_categorical_x_values(tmp_path: Path) -> None:
+    csv_file = tmp_path / "categories.csv"
+    _write_csv(
+        csv_file,
+        [
+            {"category": "A", "y": 10.0},
+            {"category": "B", "y": 12.0},
+            {"category": "A", "y": 8.0},
+        ],
+    )
+
+    result = runner.invoke(
+        app,
+        ["plot", str(csv_file), "category", "y", "--kind", "scatter"],
+    )
+
+    assert result.exit_code == 0
+    assert "scatter" in result.stdout
+    assert "encoded categorical x-values" in result.stdout
+
+
+def test_plot_fails_when_column_is_missing(tmp_path: Path) -> None:
+    csv_file = tmp_path / "series.csv"
+    _write_csv(csv_file, [{"x": 1, "y": 10.0}])
+
+    result = runner.invoke(app, ["plot", str(csv_file), "missing", "y"])
+
+    assert result.exit_code == 1
+    assert "Column not found" in result.stdout
+
+
+def test_plot_auto_selects_line_for_sorted_numeric_x(tmp_path: Path) -> None:
+    csv_file = tmp_path / "auto_line.csv"
+    _write_csv(
+        csv_file,
+        [
+            {"x": 1, "y": 10.0},
+            {"x": 2, "y": 12.0},
+            {"x": 3, "y": 14.0},
+        ],
+    )
+
+    result = runner.invoke(app, ["plot", str(csv_file), "x", "y"])
+
+    assert result.exit_code == 0
+    assert "Kind" in result.stdout
+    assert "line" in result.stdout
+
+
+def test_plot_auto_selects_scatter_for_unsorted_numeric_x(tmp_path: Path) -> None:
+    csv_file = tmp_path / "auto_scatter_unsorted.csv"
+    _write_csv(
+        csv_file,
+        [
+            {"x": 3, "y": 30.0},
+            {"x": 1, "y": 10.0},
+            {"x": 2, "y": 20.0},
+        ],
+    )
+
+    result = runner.invoke(app, ["plot", str(csv_file), "x", "y"])
+
+    assert result.exit_code == 0
+    assert "scatter" in result.stdout
+    assert "not monotonic" in result.stdout
+
+
+def test_plot_auto_selects_scatter_for_duplicate_numeric_x(tmp_path: Path) -> None:
+    csv_file = tmp_path / "auto_scatter_duplicates.csv"
+    _write_csv(
+        csv_file,
+        [
+            {"x": 1, "y": 10.0},
+            {"x": 1, "y": 12.0},
+            {"x": 2, "y": 20.0},
+        ],
+    )
+
+    result = runner.invoke(app, ["plot", str(csv_file), "x", "y"])
+
+    assert result.exit_code == 0
+    assert "scatter" in result.stdout
+    assert "contain duplicates" in result.stdout
+
+
+def test_plot_line_rejects_categorical_x_values(tmp_path: Path) -> None:
+    csv_file = tmp_path / "categorical_line.csv"
+    _write_csv(
+        csv_file,
+        [
+            {"x": "A", "y": 10.0},
+            {"x": "B", "y": 12.0},
+            {"x": "C", "y": 14.0},
+        ],
+    )
+
+    result = runner.invoke(app, ["plot", str(csv_file), "x", "y", "--kind", "line"])
+
+    assert result.exit_code == 1
+    assert "Line plots require numeric or temporal x-values" in result.stdout
+    assert "Traceback" not in result.stdout
+
+
+def test_plot_line_drops_non_plottable_numeric_x_rows_with_warning(
+    tmp_path: Path,
+) -> None:
+    parquet_file = tmp_path / "numeric_x_edges.parquet"
+    pl.DataFrame(
+        {
+            "x": [1.0, float("nan"), 2.0, float("inf")],
+            "y": [10.0, 11.0, 12.0, 13.0],
+        }
+    ).write_parquet(parquet_file)
+
+    result = runner.invoke(
+        app,
+        ["plot", str(parquet_file), "x", "y", "--kind", "line"],
+    )
+
+    assert result.exit_code == 0
+    assert "Line plot dropped 2 rows with non-plottable x-values" in result.stdout
+    assert "Line plots require numeric or temporal x-values" not in result.stdout
+
+
+def test_plot_folder_renders_stacked_per_file_plots(tmp_path: Path) -> None:
+    folder = tmp_path / "plots"
+    folder.mkdir()
+    _write_csv(folder / "a.csv", [{"x": 1, "y": 10.0}, {"x": 2, "y": 12.0}])
+    _write_csv(folder / "b.csv", [{"x": 1, "y": 20.0}, {"x": 2, "y": 22.0}])
+
+    result = runner.invoke(app, ["plot", str(folder), "x", "y", "--kind", "line"])
+
+    assert result.exit_code == 0
+    assert "Folder Plot Summary" in result.stdout
+    assert "File 1: a.csv" in result.stdout
+    assert "File 2: b.csv" in result.stdout
+
+
+def test_plot_folder_limits_default_number_of_files(tmp_path: Path) -> None:
+    folder = tmp_path / "many_plots"
+    folder.mkdir()
+    for index in range(7):
+        _write_csv(
+            folder / f"{index:02d}.csv",
+            [{"x": 1, "y": float(index)}, {"x": 2, "y": float(index + 1)}],
+        )
+
+    result = runner.invoke(app, ["plot", str(folder), "x", "y", "--kind", "line"])
+
+    assert result.exit_code == 0
+    assert "File 5:" in result.stdout
+    assert "File 6:" not in result.stdout
+    assert "Folder contains 7 files; plotted first 5." in result.stdout
+
+
+def test_plot_folder_respects_custom_file_limit(tmp_path: Path) -> None:
+    folder = tmp_path / "many_plots"
+    folder.mkdir()
+    for index in range(7):
+        _write_csv(
+            folder / f"{index:02d}.csv",
+            [{"x": 1, "y": float(index)}, {"x": 2, "y": float(index + 1)}],
+        )
+
+    result = runner.invoke(
+        app,
+        [
+            "plot",
+            str(folder),
+            "x",
+            "y",
+            "--kind",
+            "line",
+            "-n",
+            "7",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "File 7:" in result.stdout
+    assert "plotted first 5" not in result.stdout
+
+
+def test_plot_folder_limit_rejects_zero(tmp_path: Path) -> None:
+    folder = tmp_path / "plots"
+    folder.mkdir()
+    _write_csv(folder / "a.csv", [{"x": 1, "y": 10.0}])
+
+    result = runner.invoke(
+        app,
+        [
+            "plot",
+            str(folder),
+            "x",
+            "y",
+            "-n",
+            "0",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "-n must be greater than or equal to 1." in result.stdout
+    assert "Traceback" not in result.stdout
 
 
 def test_transform_user_script_failures_fail_without_traceback(

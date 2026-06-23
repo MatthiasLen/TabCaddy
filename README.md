@@ -54,6 +54,7 @@ uv add tabcaddy
 - `summary`: profile counts, schemas, stats, and warnings
 - `head`: preview rows from files, folders, or compiled datasets
 - `schema`: inspect schema groups and drift-focused schema diagnostics
+- `plot`: plot one column against another as a line or scatter chart
 - `compile`: materialize a selected schema into a compiled Parquet dataset
 - `scaffold-transform`: generate a transform starter from observed schemas
 - `transform`: apply Python transforms to file, folder, or compiled inputs
@@ -174,6 +175,23 @@ tabcaddy schema <source>
 ```
 
 Focused schema analysis for schema groups, type changes, and non-dominant files. This command always uses quick schema analysis and does not take `--profile`.
+
+`plot`
+
+```bash
+tabcaddy plot <source> <column_x> <column_y> [<column_y> ...] [--kind auto|line|scatter] [--aggregate-x mean|median|min|max|sum|count] [--interpolation linear|nearest] [--fail-on-x-duplicates] [--fail-on-x-unsorted]
+```
+
+Plots one or more y-columns against the same x-column in the terminal.
+
+- `column_x`: numeric (`Int`, `Float`, `Decimal`) or temporal (`Date`, `Datetime`, `Time`, `Duration`); categorical/string x is accepted for scatter only
+- `column_y`: one or more y-columns; each must be numeric, boolean (`true=1`, `false=0`), or castable to `Float64`; strings and nested types are not supported
+- `--kind auto` picks `line` for temporal `x` and for numeric `x` only when values are monotonic and unique; otherwise it picks `scatter`
+- `--interpolation` controls line chart x-resampling; defaults to `linear` and also supports `nearest`
+- line plots fail on duplicate `x` by default unless `--aggregate-x` is provided
+- line plots auto-sort `x` by default; use `--fail-on-x-unsorted` for strict mode
+- when multiple y-columns are provided, TabCaddy renders stacked plots (one per y) with distinct line colors and matching metadata color cues
+- rows with null values or non-numeric `y` values are dropped and reported as warnings
 
 `compile`
 

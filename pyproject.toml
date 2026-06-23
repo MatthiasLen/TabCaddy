@@ -23,6 +23,7 @@ dependencies = [
     "tzdata>=2025.2",
     "typer>=0.26.7",
     "benchcaddy>=0.1.13",
+    "scipy>=1.17.1",
 ]
 
 [project.scripts]

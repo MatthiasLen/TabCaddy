@@ -7,17 +7,21 @@ import polars as pl
 import typer
 from rich.text import Text
 
+from tabcaddy import __version__
 from tabcaddy.analysis import GenerateAnalysis, resolve_source
 from tabcaddy.compilation import CompileDataset
 from tabcaddy.diff import DiffDatasets
 from tabcaddy.domain.models import DiffLevel
 from tabcaddy.domain.models import ProfileMode
 from tabcaddy.merge import MergeDatasets
+from tabcaddy.plot import PlotDataset
 from tabcaddy.preview import HeadDataset
 from tabcaddy.rendering.console import create_console
 from tabcaddy.rendering.console import resolve_render_profile
 from tabcaddy.rendering.views.diff import build_diff_view
 from tabcaddy.rendering.views.head import build_file_head_view, build_folder_head_view
+from tabcaddy.rendering.views.plot import build_multi_y_plot_view
+from tabcaddy.rendering.views.plot import build_plot_view
 from tabcaddy.rendering.views.schema import build_schema_view
 from tabcaddy.rendering.views.summary import build_summary_view
 from tabcaddy.transforms import ScaffoldTransform, TransformDataset
@@ -30,8 +34,24 @@ app = typer.Typer(
 )
 
 
+def _show_version(value: bool) -> None:
+    if not value:
+        return
+
+    typer.echo(__version__)
+    raise typer.Exit()
+
+
 @app.callback()
-def root() -> None:
+def root(
+    _show_version: bool = typer.Option(
+        False,
+        "--version",
+        callback=_show_version,
+        is_eager=True,
+        help="Display the current TabCaddy version and exit.",
+    ),
+) -> None:
     """TabCaddy command line interface."""
 
 
@@ -314,6 +334,97 @@ def head(
                 frame.df, frame.path, render=render, show_meta=show_meta
             )
         )
+
+
+@app.command(help="Plot one column against another using line or scatter charts")
+def plot(
+    source: Path,
+    column_x: str,
+    column_y: list[str] = typer.Argument(
+        ...,
+        help="One or more Y columns to plot against column_x.",
+    ),
+    kind: Literal["auto", "line", "scatter"] = typer.Option(
+        "auto",
+        "--kind",
+        help=(
+            "Chart kind. auto chooses line for temporal x and for numeric x "
+            "only when values are monotonic and unique."
+        ),
+    ),
+    aggregate_x: Literal["mean", "median", "min", "max", "sum", "count"]
+    | None = typer.Option(
+        None,
+        "--aggregate-x",
+        help="Optional y-aggregation applied per x value before plotting.",
+    ),
+    line_interpolation: Literal["linear", "nearest"] = typer.Option(
+        "linear",
+        "--interpolation",
+        help="Interpolation mode used when rendering line charts.",
+    ),
+    fail_on_x_duplicates: bool = typer.Option(
+        False,
+        "--fail-on-x-duplicates",
+        help="Fail when duplicate x-values are present.",
+    ),
+    fail_on_unsorted_x: bool = typer.Option(
+        False,
+        "--fail-on-x-unsorted",
+        help="Fail instead of auto-sorting x-values for line plots.",
+    ),
+    n: int = typer.Option(
+        5,
+        "--n",
+        "-n",
+        help=("Maximum number of files to plot from a folder input. "),
+    ),
+) -> None:
+    console = create_console()
+    render = resolve_render_profile(console)
+
+    y_columns = list(dict.fromkeys(column_y))
+    if not y_columns:
+        console.print("[red]At least one Y column is required.[/red]")
+        raise typer.Exit(code=1)
+
+    try:
+        source_resolved = resolve_source(source)
+        plot_dataset = PlotDataset()
+        results_by_y = [
+            (
+                y_column,
+                plot_dataset.run(
+                    source_resolved,
+                    column_x,
+                    y_column,
+                    kind=kind,
+                    aggregate_x=aggregate_x,
+                    line_interpolation=line_interpolation,
+                    fail_on_x_duplicates=fail_on_x_duplicates,
+                    fail_on_unsorted_x=fail_on_unsorted_x,
+                    folder_max_files=n,
+                ),
+            )
+            for y_column in y_columns
+        ]
+    except pl.exceptions.PolarsError as error:
+        console.print(f"Failed to read input data for plot: {error}")
+        raise typer.Exit(code=1) from error
+    except (FileNotFoundError, ValueError) as error:
+        console.print(f"[red]{error}[/red]")
+        raise typer.Exit(code=1) from error
+
+    if len(results_by_y) == 1:
+        y_column_name = results_by_y[0][0]
+        console.print(
+            build_plot_view(
+                results_by_y[0][1], render=render, chart_title=y_column_name
+            )
+        )
+        return
+
+    console.print(build_multi_y_plot_view(results_by_y, render=render))
 
 
 @app.command(

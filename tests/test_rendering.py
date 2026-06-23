@@ -17,9 +17,14 @@ from tabcaddy.domain.models import RowFieldDelta
 from tabcaddy.domain.models import DiffSummary
 from tabcaddy.domain.models import SchemaSignature
 from tabcaddy.analysis.schema import FileSchemaRecord
+from tabcaddy.rendering.charts.axis_formatters import format_epoch_seconds_utc
 from tabcaddy.rendering.console import create_console
 from tabcaddy.rendering.console import RenderProfile
+from tabcaddy.rendering.charts.line_chart import _resample_by_x
+from tabcaddy.rendering.charts.line_chart import render_line_chart
+from tabcaddy.rendering.charts.scatter_chart import render_scatter_chart
 from tabcaddy.rendering.views.diff import build_diff_view
+from tabcaddy.rendering.views.plot import _resolve_chart_width
 from tabcaddy.rendering.views.schema import build_schema_view
 from tabcaddy.rendering.views.summary import build_summary_view
 
@@ -193,3 +198,122 @@ def test_diff_render_shows_row_level_sections() -> None:
     assert "Updated Rows" in output
     assert "Added Key Samples" in output
     assert "customer_id=42" in output
+
+
+def test_line_chart_respects_x_spacing_with_resampling() -> None:
+    dense_x = [0.0, 1.0, 2.0, 3.0]
+    dense_y = [0.0, 10.0, 20.0, 30.0]
+    sparse_x = [0.0, 100.0, 101.0, 102.0]
+    sparse_y = [0.0, 10.0, 20.0, 30.0]
+
+    dense_chart = render_line_chart(dense_y, x_values=dense_x, width=40)
+    sparse_chart = render_line_chart(sparse_y, x_values=sparse_x, width=40)
+
+    assert dense_chart
+    assert sparse_chart
+    assert dense_chart != sparse_chart
+
+
+def test_line_resampling_supports_nearest_neighbor_mode() -> None:
+    values = [0.0, 10.0]
+    x_values = [0.0, 10.0]
+
+    linear = _resample_by_x(
+        values,
+        x_values,
+        target_points=3,
+        interpolation="linear",
+    )
+    nearest = _resample_by_x(
+        values,
+        x_values,
+        target_points=3,
+        interpolation="nearest",
+    )
+
+    assert linear == [0.0, 5.0, 10.0]
+    assert nearest == [0.0, 0.0, 10.0]
+
+
+def test_scatter_chart_clamps_small_dimensions() -> None:
+    points = [(0.0, 0.0), (1.0, 1.0)]
+
+    zero_dim_chart = render_scatter_chart(points, width=0, height=0)
+    one_dim_chart = render_scatter_chart(points, width=1, height=1)
+
+    assert zero_dim_chart
+    assert one_dim_chart
+
+
+def test_line_chart_adds_utc_footer_for_temporal_x() -> None:
+    x_values = [
+        datetime(2026, 2, 7, tzinfo=timezone.utc).timestamp(),
+        datetime(2026, 2, 8, tzinfo=timezone.utc).timestamp(),
+        datetime(2026, 2, 9, tzinfo=timezone.utc).timestamp(),
+    ]
+    y_values = [1.0, 2.0, 3.0]
+
+    chart = render_line_chart(
+        y_values,
+        x_values=x_values,
+        x_tick_formatter=format_epoch_seconds_utc,
+        width=30,
+    )
+
+    assert "2026-02-07" in chart
+    assert "2026-02-09" in chart
+
+
+def test_scatter_chart_formats_temporal_x_labels_as_utc_dates() -> None:
+    points = [
+        (datetime(2026, 2, 7, tzinfo=timezone.utc).timestamp(), 1.0),
+        (datetime(2026, 2, 9, tzinfo=timezone.utc).timestamp(), 2.0),
+    ]
+
+    chart = render_scatter_chart(points, x_tick_formatter=format_epoch_seconds_utc)
+
+    assert "2026-02-07" in chart
+    assert "2026-02-09" in chart
+
+
+def test_scatter_chart_uses_box_drawing_axes_by_default() -> None:
+    points = [(0.0, 0.0), (1.0, 1.0)]
+
+    chart = render_scatter_chart(points)
+
+    assert "│" in chart
+    assert "└" in chart
+    assert "─" in chart
+
+
+def test_scatter_chart_supports_ascii_axis_chars() -> None:
+    points = [(0.0, 0.0), (1.0, 1.0)]
+
+    chart = render_scatter_chart(
+        points,
+        y_axis_char="|",
+        x_axis_char="-",
+        axis_corner_char="+",
+    )
+
+    assert "|" in chart
+    assert "+" in chart
+    assert "-" in chart
+
+
+def test_plot_chart_width_uses_full_width_for_narrow_console() -> None:
+    width = _resolve_chart_width(console_width=80, point_count=500)
+
+    assert width == 80
+
+
+def test_plot_chart_width_caps_sparse_data_on_wide_console() -> None:
+    width = _resolve_chart_width(console_width=140, point_count=5)
+
+    assert width == 60
+
+
+def test_plot_chart_width_scales_for_dense_data_on_wide_console() -> None:
+    width = _resolve_chart_width(console_width=140, point_count=500)
+
+    assert width == 116
