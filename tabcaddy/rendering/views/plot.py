@@ -221,6 +221,9 @@ def _build_single_plot_view(
         chart = render_scatter_chart(
             result.scatter_points,
             point="#" if render.ascii_only else "•",
+            y_axis_char="|" if render.ascii_only else "│",
+            x_axis_char="-" if render.ascii_only else "─",
+            axis_corner_char="+" if render.ascii_only else "└",
             x_tick_formatter=x_tick_formatter,
             width=chart_width,
         )

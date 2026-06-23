@@ -276,6 +276,31 @@ def test_scatter_chart_formats_temporal_x_labels_as_utc_dates() -> None:
     assert "2026-02-09" in chart
 
 
+def test_scatter_chart_uses_box_drawing_axes_by_default() -> None:
+    points = [(0.0, 0.0), (1.0, 1.0)]
+
+    chart = render_scatter_chart(points)
+
+    assert "│" in chart
+    assert "└" in chart
+    assert "─" in chart
+
+
+def test_scatter_chart_supports_ascii_axis_chars() -> None:
+    points = [(0.0, 0.0), (1.0, 1.0)]
+
+    chart = render_scatter_chart(
+        points,
+        y_axis_char="|",
+        x_axis_char="-",
+        axis_corner_char="+",
+    )
+
+    assert "|" in chart
+    assert "+" in chart
+    assert "-" in chart
+
+
 def test_plot_chart_width_uses_full_width_for_narrow_console() -> None:
     width = _resolve_chart_width(console_width=80, point_count=500)
 

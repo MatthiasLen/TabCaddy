@@ -455,16 +455,16 @@ class PlotDataset:
         line_interpolation: Literal["linear", "nearest"],
         warnings: list[str],
     ) -> PlotResult:
-        line_x_values = self._line_x_values(frame)
-        line_values = [
-            float(value)
-            for value in frame.get_column("_y").to_list()
-            if value is not None and math.isfinite(float(value))
-        ]
-        if len(line_x_values) != len(line_values):
+        if x_axis_kind == "categorical":
             raise ValueError(
                 "Line plots require numeric or temporal x-values. "
                 "Use --kind scatter for categorical x."
+            )
+
+        line_x_values, line_values, dropped_x_rows = self._line_points(frame)
+        if dropped_x_rows > 0:
+            warnings.append(
+                f"Line plot dropped {dropped_x_rows} rows with non-plottable x-values."
             )
         if not line_values:
             raise ValueError("No numeric y-values available for line plot.")
@@ -477,7 +477,7 @@ class PlotDataset:
             x_axis_timezone=x_axis_timezone,
             row_count=row_count,
             plotted_rows=len(line_values),
-            dropped_rows=dropped_rows,
+            dropped_rows=dropped_rows + dropped_x_rows,
             duplicate_x_count=duplicate_x_count,
             sorted_x=sorted_x,
             auto_sorted=auto_sorted,
@@ -609,14 +609,28 @@ class PlotDataset:
             )
         return None
 
-    def _line_x_values(self, frame: pl.DataFrame) -> list[float]:
-        result: list[float] = []
-        for value in frame.get_column("_x").to_list():
-            converted = self._to_numeric_x(value)
-            if converted is None or not math.isfinite(converted):
-                return []
-            result.append(converted)
-        return result
+    def _line_points(self, frame: pl.DataFrame) -> tuple[list[float], list[float], int]:
+        x_values = frame.get_column("_x").to_list()
+        y_values = frame.get_column("_y").to_list()
+
+        plotted_x: list[float] = []
+        plotted_y: list[float] = []
+        dropped = 0
+        for x_value, y_value in zip(x_values, y_values, strict=False):
+            converted_x = self._to_numeric_x(x_value)
+            if converted_x is None or not math.isfinite(converted_x):
+                dropped += 1
+                continue
+
+            numeric_y = float(y_value)
+            if not math.isfinite(numeric_y):
+                dropped += 1
+                continue
+
+            plotted_x.append(converted_x)
+            plotted_y.append(numeric_y)
+
+        return plotted_x, plotted_y, dropped
 
     def _is_numeric_dtype(self, dtype: pl.DataType) -> bool:
         probe = getattr(dtype, "is_numeric", None)

@@ -19,6 +19,9 @@ def render_scatter_chart(
     width: int = 48,
     height: int = 12,
     point: str = "•",
+    y_axis_char: str = "│",
+    x_axis_char: str = "─",
+    axis_corner_char: str = "└",
     x_tick_formatter: Callable[[float], str] | None = None,
 ) -> str:
     if not points:
@@ -55,9 +58,11 @@ def render_scatter_chart(
     lines: list[str] = []
     for index, row in enumerate(grid):
         y_value = max_y - (index / (height - 1)) * (max_y - min_y)
-        lines.append(f"{_format_axis(y_value):>{label_width}} |{''.join(row)}")
+        lines.append(
+            f"{_format_axis(y_value):>{label_width}} {y_axis_char}{''.join(row)}"
+        )
 
-    lines.append(" " * (label_width + 1) + "+" + "-" * width)
+    lines.append(" " * (label_width + 1) + axis_corner_char + x_axis_char * width)
     min_x_label = (
         x_tick_formatter(min_x) if x_tick_formatter is not None else _format_axis(min_x)
     )

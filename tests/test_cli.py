@@ -1042,6 +1042,27 @@ def test_plot_line_rejects_categorical_x_values(tmp_path: Path) -> None:
     assert "Traceback" not in result.stdout
 
 
+def test_plot_line_drops_non_plottable_numeric_x_rows_with_warning(
+    tmp_path: Path,
+) -> None:
+    parquet_file = tmp_path / "numeric_x_edges.parquet"
+    pl.DataFrame(
+        {
+            "x": [1.0, float("nan"), 2.0, float("inf")],
+            "y": [10.0, 11.0, 12.0, 13.0],
+        }
+    ).write_parquet(parquet_file)
+
+    result = runner.invoke(
+        app,
+        ["plot", str(parquet_file), "x", "y", "--kind", "line"],
+    )
+
+    assert result.exit_code == 0
+    assert "Line plot dropped 2 rows with non-plottable x-values" in result.stdout
+    assert "Line plots require numeric or temporal x-values" not in result.stdout
+
+
 def test_plot_folder_renders_stacked_per_file_plots(tmp_path: Path) -> None:
     folder = tmp_path / "plots"
     folder.mkdir()
