@@ -14,7 +14,7 @@ from tabcaddy.diff import DiffDatasets
 from tabcaddy.domain.models import DiffLevel
 from tabcaddy.domain.models import ProfileMode
 from tabcaddy.merge import MergeDatasets
-from tabcaddy.plot import PlotDataset
+from tabcaddy.plot.service import PlotDataset
 from tabcaddy.preview import HeadDataset
 from tabcaddy.rendering.console import create_console
 from tabcaddy.rendering.console import resolve_render_profile
@@ -379,6 +379,14 @@ def plot(
         "-n",
         help=("Maximum number of files to plot from a folder input. "),
     ),
+    filter_expr: str | None = typer.Option(
+        None,
+        "--filter",
+        help=(
+            "Optional row filter in the form COLUMN OP VALUE, for example "
+            "'CURRENT>0.5' or \"STATUS==OK\"."
+        ),
+    ),
 ) -> None:
     console = create_console()
     render = resolve_render_profile(console)
@@ -390,7 +398,7 @@ def plot(
 
     try:
         source_resolved = resolve_source(source)
-        plot_dataset = PlotDataset()
+        plot_dataset = PlotDataset(filter_expr=filter_expr)
         results_by_y = [
             (
                 y_column,
