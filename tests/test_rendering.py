@@ -24,6 +24,7 @@ from tabcaddy.rendering.charts.line_chart import _resample_by_x
 from tabcaddy.rendering.charts.line_chart import render_line_chart
 from tabcaddy.rendering.charts.scatter_chart import render_scatter_chart
 from tabcaddy.rendering.views.diff import build_diff_view
+from tabcaddy.rendering.views.plot import _resolve_chart_width
 from tabcaddy.rendering.views.schema import build_schema_view
 from tabcaddy.rendering.views.summary import build_summary_view
 
@@ -273,3 +274,21 @@ def test_scatter_chart_formats_temporal_x_labels_as_utc_dates() -> None:
 
     assert "2026-02-07" in chart
     assert "2026-02-09" in chart
+
+
+def test_plot_chart_width_uses_full_width_for_narrow_console() -> None:
+    width = _resolve_chart_width(console_width=80, point_count=500)
+
+    assert width == 80
+
+
+def test_plot_chart_width_caps_sparse_data_on_wide_console() -> None:
+    width = _resolve_chart_width(console_width=140, point_count=5)
+
+    assert width == 60
+
+
+def test_plot_chart_width_scales_for_dense_data_on_wide_console() -> None:
+    width = _resolve_chart_width(console_width=140, point_count=500)
+
+    assert width == 116

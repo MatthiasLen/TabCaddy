@@ -19,6 +19,7 @@ from tabcaddy.rendering.console import create_console
 from tabcaddy.rendering.console import resolve_render_profile
 from tabcaddy.rendering.views.diff import build_diff_view
 from tabcaddy.rendering.views.head import build_file_head_view, build_folder_head_view
+from tabcaddy.rendering.views.plot import build_multi_y_plot_view
 from tabcaddy.rendering.views.plot import build_plot_view
 from tabcaddy.rendering.views.schema import build_schema_view
 from tabcaddy.rendering.views.summary import build_summary_view
@@ -322,7 +323,10 @@ def head(
 def plot(
     source: Path,
     column_x: str,
-    column_y: str,
+    column_y: list[str] = typer.Argument(
+        ...,
+        help="One or more Y columns to plot against column_x.",
+    ),
     kind: Literal["auto", "line", "scatter"] = typer.Option(
         "auto",
         "--kind",
@@ -362,18 +366,31 @@ def plot(
     console = create_console()
     render = resolve_render_profile(console)
 
+    y_columns = list(dict.fromkeys(column_y))
+    if not y_columns:
+        console.print("[red]At least one Y column is required.[/red]")
+        raise typer.Exit(code=1)
+
     try:
-        result = PlotDataset().run(
-            resolve_source(source),
-            column_x,
-            column_y,
-            kind=kind,
-            aggregate_x=aggregate_x,
-            line_interpolation=line_interpolation,
-            fail_on_x_duplicates=fail_on_x_duplicates,
-            fail_on_unsorted_x=fail_on_unsorted_x,
-            folder_max_files=n,
-        )
+        source_resolved = resolve_source(source)
+        plot_dataset = PlotDataset()
+        results_by_y = [
+            (
+                y_column,
+                plot_dataset.run(
+                    source_resolved,
+                    column_x,
+                    y_column,
+                    kind=kind,
+                    aggregate_x=aggregate_x,
+                    line_interpolation=line_interpolation,
+                    fail_on_x_duplicates=fail_on_x_duplicates,
+                    fail_on_unsorted_x=fail_on_unsorted_x,
+                    folder_max_files=n,
+                ),
+            )
+            for y_column in y_columns
+        ]
     except pl.exceptions.PolarsError as error:
         console.print(f"Failed to read input data for plot: {error}")
         raise typer.Exit(code=1) from error
@@ -381,7 +398,16 @@ def plot(
         console.print(f"[red]{error}[/red]")
         raise typer.Exit(code=1) from error
 
-    console.print(build_plot_view(result, render=render))
+    if len(results_by_y) == 1:
+        y_column_name = results_by_y[0][0]
+        console.print(
+            build_plot_view(
+                results_by_y[0][1], render=render, chart_title=y_column_name
+            )
+        )
+        return
+
+    console.print(build_multi_y_plot_view(results_by_y, render=render))
 
 
 @app.command(

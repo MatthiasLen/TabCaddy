@@ -2,11 +2,38 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 import math
+import re
 from typing import Callable, Literal
 
 import asciichartpy
 import numpy as np
 from scipy.interpolate import interp1d
+
+
+_ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+# Keep ANSI and Rich styles in the same order so chart and metadata share a palette.
+LINE_SERIES_ANSI_COLORS = [
+    asciichartpy.cyan,
+    asciichartpy.magenta,
+    asciichartpy.green,
+    asciichartpy.yellow,
+    asciichartpy.blue,
+    asciichartpy.red,
+]
+LINE_SERIES_RICH_STYLES = ["cyan", "magenta", "green", "yellow", "blue", "red"]
+
+
+def get_line_series_ansi_color(index: int) -> str:
+    return LINE_SERIES_ANSI_COLORS[index % len(LINE_SERIES_ANSI_COLORS)]
+
+
+def get_line_series_rich_style(index: int) -> str:
+    return LINE_SERIES_RICH_STYLES[index % len(LINE_SERIES_RICH_STYLES)]
+
+
+def _strip_ansi(text: str) -> str:
+    return _ANSI_ESCAPE_RE.sub("", text)
 
 
 def _resample_by_x(
@@ -48,6 +75,7 @@ def render_line_chart(
     x_values: Sequence[float] | None = None,
     interpolation: Literal["linear", "nearest"] = "linear",
     x_tick_formatter: Callable[[float], str] | None = None,
+    color: str | None = None,
     height: int = 10,
     width: int = 60,
 ) -> str:
@@ -66,7 +94,10 @@ def render_line_chart(
                 interpolation=interpolation,
             )
 
-    chart = asciichartpy.plot(series, {"height": height})
+    config: dict[str, object] = {"height": height}
+    if color is not None:
+        config["colors"] = [color]
+    chart = asciichartpy.plot(series, config)
 
     if (
         x_tick_formatter is None
@@ -87,15 +118,17 @@ def render_line_chart(
     if not lines:
         return chart
 
+    plain_lines = [_strip_ansi(line) for line in lines]
+
     axis_index = next(
-        (index for index, ch in enumerate(lines[0]) if ch in {"┤", "┼"}),
+        (index for index, ch in enumerate(plain_lines[0]) if ch in {"┤", "┼"}),
         None,
     )
     if axis_index is None:
         return "\n".join([chart, f"{left_label}  {right_label}"])
 
     plot_start = axis_index + 1
-    plot_width = max(0, max(len(line) - plot_start for line in lines))
+    plot_width = max(0, max(len(line) - plot_start for line in plain_lines))
     gap = max(1, plot_width - len(left_label) - len(right_label))
     footer = " " * plot_start + left_label + (" " * gap) + right_label
     footer_line = " " * (plot_start - 1) + "└" + "─" * (len(footer) - plot_start)

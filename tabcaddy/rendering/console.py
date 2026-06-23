@@ -61,6 +61,7 @@ def create_console(
 @dataclass(frozen=True)
 class RenderProfile:
     ascii_only: bool = False
+    console_width: int | None = None
 
     @property
     def bar_fill(self) -> str:
@@ -105,7 +106,10 @@ def console_supports_unicode(console: Console) -> bool:
 def resolve_render_profile(console: Console | None = None) -> RenderProfile:
     if console is None:
         return RenderProfile()
-    return RenderProfile(ascii_only=not console_supports_unicode(console))
+    return RenderProfile(
+        ascii_only=not console_supports_unicode(console),
+        console_width=console.width,
+    )
 
 
 def table_render_options(*, ascii_only: bool) -> dict[str, object]:

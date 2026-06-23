@@ -774,9 +774,32 @@ def test_plot_line_renders_for_numeric_columns(tmp_path: Path) -> None:
 
     assert result.exit_code == 0
     assert "Plot" in result.stdout
-    assert "Chart" in result.stdout
+    assert "y" in result.stdout
     assert "Kind" in result.stdout
     assert "line" in result.stdout
+
+
+def test_plot_multiple_y_columns_renders_stacked_sections(tmp_path: Path) -> None:
+    csv_file = tmp_path / "multi_series.csv"
+    _write_csv(
+        csv_file,
+        [
+            {"x": 1, "y_a": 10.0, "y_b": 100.0},
+            {"x": 2, "y_a": 12.5, "y_b": 110.0},
+            {"x": 3, "y_a": 15.0, "y_b": 120.0},
+        ],
+    )
+
+    result = runner.invoke(
+        app,
+        ["plot", str(csv_file), "x", "y_a", "y_b", "--kind", "line"],
+    )
+
+    assert result.exit_code == 0
+    assert "Plot" in result.stdout
+    assert "Y" in result.stdout
+    assert "y_a" in result.stdout
+    assert "y_b" in result.stdout
 
 
 def test_plot_line_uses_nearest_interpolation_when_requested(tmp_path: Path) -> None:
@@ -799,7 +822,7 @@ def test_plot_line_uses_nearest_interpolation_when_requested(tmp_path: Path) -> 
             "y",
             "--kind",
             "line",
-            "--interplotation",
+            "--interpolation",
             "nearest",
         ],
     )
