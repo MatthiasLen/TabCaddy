@@ -7,6 +7,7 @@ import polars as pl
 import typer
 from rich.text import Text
 
+from tabcaddy import __version__
 from tabcaddy.analysis import GenerateAnalysis, resolve_source
 from tabcaddy.compilation import CompileDataset
 from tabcaddy.diff import DiffDatasets
@@ -33,8 +34,24 @@ app = typer.Typer(
 )
 
 
+def _show_version(value: bool) -> None:
+    if not value:
+        return
+
+    typer.echo(__version__)
+    raise typer.Exit()
+
+
 @app.callback()
-def root() -> None:
+def root(
+    _show_version: bool = typer.Option(
+        False,
+        "--version",
+        callback=_show_version,
+        is_eager=True,
+        help="Display the current TabCaddy version and exit.",
+    ),
+) -> None:
     """TabCaddy command line interface."""
 
 

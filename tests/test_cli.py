@@ -6,11 +6,26 @@ from pathlib import Path
 import polars as pl
 from typer.testing import CliRunner
 
+from tabcaddy import __version__
 from tabcaddy.cli.app import app
 from tabcaddy.compilation import ValidationResult
 
 
 runner = CliRunner()
+
+
+def test_version_option_displays_current_version() -> None:
+    result = runner.invoke(app, ["--version"])
+
+    assert result.exit_code == 0
+    assert result.stdout.strip() == __version__
+
+
+def test_version_subcommand_is_not_available() -> None:
+    result = runner.invoke(app, ["version"])
+
+    assert result.exit_code != 0
+    assert "No such command 'version'" in result.stdout
 
 
 def _write_csv(path: Path, rows: list[dict]) -> None:
