@@ -14,6 +14,7 @@ from tabcaddy.shared.dataset_io import scan_dataframe, scan_parquet_dataset
 
 
 _SUPPORTED_AGGREGATIONS = {"mean", "median", "min", "max", "sum", "count"}
+_NAIVE_UNIX_EPOCH = datetime(1970, 1, 1)
 
 
 @dataclass
@@ -58,7 +59,9 @@ class PlotDataset:
         x_dtype = schema[x_column]
         y_dtype = schema[y_column]
         if y_dtype.is_nested():
-            raise ValueError(f"Column '{y_column}' is not plottable (nested type: {y_dtype}).")
+            raise ValueError(
+                f"Column '{y_column}' is not plottable (nested type: {y_dtype})."
+            )
 
         warnings: list[str] = []
 
@@ -87,7 +90,9 @@ class PlotDataset:
 
         dropped_rows = row_count - filtered.height
         if filtered.height == 0:
-            raise ValueError("No plottable rows remain after filtering null/invalid values.")
+            raise ValueError(
+                "No plottable rows remain after filtering null/invalid values."
+            )
 
         duplicate_x_count = self._duplicate_count(filtered)
         sorted_x = self._is_sorted(filtered)
@@ -98,7 +103,11 @@ class PlotDataset:
             duplicate_x_count=duplicate_x_count,
             sorted_x=sorted_x,
         )
-        if kind == "auto" and chart_kind == "scatter" and self._is_numeric_dtype(x_dtype):
+        if (
+            kind == "auto"
+            and chart_kind == "scatter"
+            and self._is_numeric_dtype(x_dtype)
+        ):
             if duplicate_x_count > 0:
                 warnings.append(
                     "Auto-selected scatter because numeric x-values contain duplicates."
@@ -233,9 +242,7 @@ class PlotDataset:
     def _is_sorted(self, frame: pl.DataFrame) -> bool:
         return bool(frame.get_column("_x").is_sorted())
 
-    def _aggregate_by_x(
-        self, frame: pl.DataFrame, aggregate_x: str
-    ) -> pl.DataFrame:
+    def _aggregate_by_x(self, frame: pl.DataFrame, aggregate_x: str) -> pl.DataFrame:
         if aggregate_x == "count":
             agg_expr = pl.col("_y").count().cast(pl.Float64).alias("_y")
         else:
@@ -300,9 +307,13 @@ class PlotDataset:
         if isinstance(value, Decimal):
             return float(value)
         if isinstance(value, datetime):
+            if value.tzinfo is None:
+                return (value - _NAIVE_UNIX_EPOCH).total_seconds()
             return value.timestamp()
         if isinstance(value, date):
-            return datetime(value.year, value.month, value.day).timestamp()
+            return (
+                datetime(value.year, value.month, value.day) - _NAIVE_UNIX_EPOCH
+            ).total_seconds()
         if isinstance(value, time):
             return (
                 value.hour * 3600.0
@@ -335,4 +346,6 @@ class PlotDataset:
             return bool(probe())
         if probe is not None:
             return bool(probe)
-        return any(token in str(dtype) for token in ("Date", "Datetime", "Time", "Duration"))
+        return any(
+            token in str(dtype) for token in ("Date", "Datetime", "Time", "Duration")
+        )

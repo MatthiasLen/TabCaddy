@@ -20,6 +20,7 @@ from tabcaddy.analysis.schema import FileSchemaRecord
 from tabcaddy.rendering.console import create_console
 from tabcaddy.rendering.console import RenderProfile
 from tabcaddy.rendering.charts.line_chart import render_line_chart
+from tabcaddy.rendering.charts.scatter_chart import render_scatter_chart
 from tabcaddy.rendering.views.diff import build_diff_view
 from tabcaddy.rendering.views.schema import build_schema_view
 from tabcaddy.rendering.views.summary import build_summary_view
@@ -208,3 +209,13 @@ def test_line_chart_respects_x_spacing_with_resampling() -> None:
     assert dense_chart
     assert sparse_chart
     assert dense_chart != sparse_chart
+
+
+def test_scatter_chart_clamps_small_dimensions() -> None:
+    points = [(0.0, 0.0), (1.0, 1.0)]
+
+    zero_dim_chart = render_scatter_chart(points, width=0, height=0)
+    one_dim_chart = render_scatter_chart(points, width=1, height=1)
+
+    assert zero_dim_chart
+    assert one_dim_chart

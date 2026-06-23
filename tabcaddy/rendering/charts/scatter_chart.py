@@ -22,11 +22,10 @@ def render_scatter_chart(
     if not points:
         return ""
 
-    finite_points = [
-        (x, y)
-        for x, y in points
-        if math.isfinite(x) and math.isfinite(y)
-    ]
+    width = max(2, width)
+    height = max(2, height)
+
+    finite_points = [(x, y) for x, y in points if math.isfinite(x) and math.isfinite(y)]
     if not finite_points:
         return ""
 

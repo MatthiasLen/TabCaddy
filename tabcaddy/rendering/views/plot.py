@@ -46,7 +46,9 @@ def build_plot_view(
 
     blocks: list[object] = [metadata, chart_panel]
     if result.warnings:
-        warning_text = Text("\n".join(f"- {warning}" for warning in result.warnings), style="yellow")
+        warning_text = Text(
+            "\n".join(f"- {warning}" for warning in result.warnings), style="yellow"
+        )
         blocks.append(
             render.panel(
                 warning_text,
