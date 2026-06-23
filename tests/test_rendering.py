@@ -20,6 +20,7 @@ from tabcaddy.analysis.schema import FileSchemaRecord
 from tabcaddy.rendering.charts.axis_formatters import format_epoch_seconds_utc
 from tabcaddy.rendering.console import create_console
 from tabcaddy.rendering.console import RenderProfile
+from tabcaddy.rendering.charts.line_chart import _resample_by_x
 from tabcaddy.rendering.charts.line_chart import render_line_chart
 from tabcaddy.rendering.charts.scatter_chart import render_scatter_chart
 from tabcaddy.rendering.views.diff import build_diff_view
@@ -210,6 +211,27 @@ def test_line_chart_respects_x_spacing_with_resampling() -> None:
     assert dense_chart
     assert sparse_chart
     assert dense_chart != sparse_chart
+
+
+def test_line_resampling_supports_nearest_neighbor_mode() -> None:
+    values = [0.0, 10.0]
+    x_values = [0.0, 10.0]
+
+    linear = _resample_by_x(
+        values,
+        x_values,
+        target_points=3,
+        interpolation="linear",
+    )
+    nearest = _resample_by_x(
+        values,
+        x_values,
+        target_points=3,
+        interpolation="nearest",
+    )
+
+    assert linear == [0.0, 5.0, 10.0]
+    assert nearest == [0.0, 0.0, 10.0]
 
 
 def test_scatter_chart_clamps_small_dimensions() -> None:

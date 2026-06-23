@@ -337,6 +337,11 @@ def plot(
         "--aggregate-x",
         help="Optional y-aggregation applied per x value before plotting.",
     ),
+    line_interpolation: Literal["linear", "nearest"] = typer.Option(
+        "linear",
+        "--line-interpolation",
+        help="Interpolation mode used when rendering line charts.",
+    ),
     fail_on_x_duplicates: bool = typer.Option(
         False,
         "--fail-on-x-duplicates",
@@ -366,6 +371,7 @@ def plot(
             column_y,
             kind=kind,
             aggregate_x=aggregate_x,
+            line_interpolation=line_interpolation,
             fail_on_x_duplicates=fail_on_x_duplicates,
             fail_on_unsorted_x=fail_on_unsorted_x,
             folder_max_files=folder_max_files,

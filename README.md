@@ -179,7 +179,7 @@ Focused schema analysis for schema groups, type changes, and non-dominant files.
 `plot`
 
 ```bash
-tabcaddy plot <source> <column_x> <column_y> [--kind auto|line|scatter] [--aggregate-x mean|median|min|max|sum|count] [--fail-on-x-duplicates] [--fail-on-unsorted-x]
+tabcaddy plot <source> <column_x> <column_y> [--kind auto|line|scatter] [--aggregate-x mean|median|min|max|sum|count] [--line-interpolation linear|nearest] [--fail-on-x-duplicates] [--fail-on-unsorted-x]
 ```
 
 Plots one column against another in the terminal.
@@ -187,6 +187,7 @@ Plots one column against another in the terminal.
 - `column_x`: numeric (`Int`, `Float`, `Decimal`) or temporal (`Date`, `Datetime`, `Time`, `Duration`); categorical/string x is accepted for scatter only
 - `column_y`: must be numeric, boolean (`true=1`, `false=0`), or castable to `Float64`; strings and nested types are not supported
 - `--kind auto` picks `line` for temporal `x` and for numeric `x` only when values are monotonic and unique; otherwise it picks `scatter`
+- `--line-interpolation` controls line chart x-resampling; defaults to `linear` and also supports `nearest`
 - line plots fail on duplicate `x` by default unless `--aggregate-x` is provided
 - line plots auto-sort `x` by default; use `--fail-on-unsorted-x` for strict mode
 - rows with null values or non-numeric `y` values are dropped and reported as warnings

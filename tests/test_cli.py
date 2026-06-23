@@ -779,6 +779,36 @@ def test_plot_line_renders_for_numeric_columns(tmp_path: Path) -> None:
     assert "line" in result.stdout
 
 
+def test_plot_line_uses_nearest_interpolation_when_requested(tmp_path: Path) -> None:
+    csv_file = tmp_path / "series.csv"
+    _write_csv(
+        csv_file,
+        [
+            {"x": 0, "y": 0.0},
+            {"x": 10, "y": 10.0},
+            {"x": 11, "y": 30.0},
+        ],
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "plot",
+            str(csv_file),
+            "x",
+            "y",
+            "--kind",
+            "line",
+            "--line-interpolation",
+            "nearest",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Interpolation" in result.stdout
+    assert "nearest" in result.stdout
+
+
 def test_plot_line_fails_on_duplicate_x_without_aggregation(tmp_path: Path) -> None:
     csv_file = tmp_path / "duplicates.csv"
     _write_csv(

@@ -34,6 +34,7 @@ class PlotResult:
     sorted_x: bool
     auto_sorted: bool
     aggregated: bool
+    line_interpolation: Literal["linear", "nearest"] | None
     line_x_values: list[float] = field(default_factory=list)
     line_values: list[float] = field(default_factory=list)
     scatter_points: list[tuple[float, float]] = field(default_factory=list)
@@ -65,6 +66,7 @@ class PlotDataset:
         kind: Literal["auto", "line", "scatter"] = "auto",
         aggregate_x: Literal["mean", "median", "min", "max", "sum", "count"]
         | None = None,
+        line_interpolation: Literal["linear", "nearest"] = "linear",
         fail_on_x_duplicates: bool = False,
         fail_on_unsorted_x: bool = False,
         folder_max_files: int = _DEFAULT_FOLDER_MAX_FILES,
@@ -79,6 +81,7 @@ class PlotDataset:
                 y_column,
                 kind=kind,
                 aggregate_x=aggregate_x,
+                line_interpolation=line_interpolation,
                 fail_on_x_duplicates=fail_on_x_duplicates,
                 fail_on_unsorted_x=fail_on_unsorted_x,
                 folder_max_files=folder_max_files,
@@ -91,6 +94,7 @@ class PlotDataset:
             y_column,
             kind=kind,
             aggregate_x=aggregate_x,
+            line_interpolation=line_interpolation,
             fail_on_x_duplicates=fail_on_x_duplicates,
             fail_on_unsorted_x=fail_on_unsorted_x,
         )
@@ -110,6 +114,7 @@ class PlotDataset:
         *,
         kind: Literal["auto", "line", "scatter"],
         aggregate_x: Literal["mean", "median", "min", "max", "sum", "count"] | None,
+        line_interpolation: Literal["linear", "nearest"],
         fail_on_x_duplicates: bool,
         fail_on_unsorted_x: bool,
         folder_max_files: int,
@@ -128,6 +133,7 @@ class PlotDataset:
                 y_column,
                 kind=kind,
                 aggregate_x=aggregate_x,
+                line_interpolation=line_interpolation,
                 fail_on_x_duplicates=fail_on_x_duplicates,
                 fail_on_unsorted_x=fail_on_unsorted_x,
             )
@@ -159,6 +165,7 @@ class PlotDataset:
         *,
         kind: Literal["auto", "line", "scatter"],
         aggregate_x: Literal["mean", "median", "min", "max", "sum", "count"] | None,
+        line_interpolation: Literal["linear", "nearest"],
         fail_on_x_duplicates: bool,
         fail_on_unsorted_x: bool,
     ) -> PlotResult:
@@ -303,6 +310,7 @@ class PlotDataset:
                 sorted_x=sorted_x,
                 auto_sorted=auto_sorted,
                 aggregated=aggregated,
+                line_interpolation=line_interpolation,
                 line_x_values=line_x_values,
                 line_values=line_values,
                 warnings=warnings,
@@ -329,6 +337,7 @@ class PlotDataset:
             sorted_x=sorted_x,
             auto_sorted=auto_sorted,
             aggregated=aggregated,
+            line_interpolation=None,
             scatter_points=scatter_points,
             warnings=warnings,
         )

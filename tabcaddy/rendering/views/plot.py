@@ -75,6 +75,8 @@ def _build_single_plot_view(
     metadata.add_row("Sorted x", "yes" if result.sorted_x else "no")
     metadata.add_row("Auto-sorted", "yes" if result.auto_sorted else "no")
     metadata.add_row("Aggregated", "yes" if result.aggregated else "no")
+    if result.line_interpolation is not None:
+        metadata.add_row("Interpolation", result.line_interpolation)
     metadata.add_row("X Axis Kind", result.x_axis_kind)
     if result.x_axis_time_unit is not None:
         metadata.add_row("X Time Unit", result.x_axis_time_unit)
@@ -93,6 +95,7 @@ def _build_single_plot_view(
         chart = cast(Any, render_line_chart)(
             result.line_values,
             x_values=result.line_x_values,
+            interpolation=result.line_interpolation or "linear",
             x_tick_formatter=x_tick_formatter,
         )
     else:
