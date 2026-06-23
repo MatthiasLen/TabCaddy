@@ -1024,6 +1024,92 @@ def test_plot_auto_selects_scatter_for_duplicate_numeric_x(tmp_path: Path) -> No
     assert "contain duplicates" in result.stdout
 
 
+def test_plot_filter_prefilters_rows_for_line_plot(tmp_path: Path) -> None:
+    csv_file = tmp_path / "filtered_series.csv"
+    _write_csv(
+        csv_file,
+        [
+            {"x": 1, "y": 10.0, "current": 0.2},
+            {"x": 2, "y": 20.0, "current": 0.6},
+            {"x": 3, "y": 30.0, "current": 0.8},
+        ],
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "plot",
+            str(csv_file),
+            "x",
+            "y",
+            "--kind",
+            "line",
+            "--filter",
+            "current>0.5",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Plot" in result.stdout
+    assert "Plotted rows" in result.stdout
+    plotted_rows_line = next(
+        line for line in result.stdout.splitlines() if "Plotted rows" in line
+    )
+    assert "2" in plotted_rows_line
+
+
+def test_plot_filter_applies_to_multiple_y_columns(tmp_path: Path) -> None:
+    csv_file = tmp_path / "filtered_multi_series.csv"
+    _write_csv(
+        csv_file,
+        [
+            {"x": 1, "y_a": 10.0, "y_b": 100.0, "keep": 0},
+            {"x": 1, "y_a": 11.0, "y_b": 101.0, "keep": 1},
+            {"x": 2, "y_a": 12.0, "y_b": 102.0, "keep": 1},
+        ],
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "plot",
+            str(csv_file),
+            "x",
+            "y_a",
+            "y_b",
+            "--kind",
+            "line",
+            "--filter",
+            "keep==1",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "y_a" in result.stdout
+    assert "y_b" in result.stdout
+    assert "Duplicate x-values detected" not in result.stdout
+
+
+def test_plot_filter_rejects_invalid_syntax(tmp_path: Path) -> None:
+    csv_file = tmp_path / "series.csv"
+    _write_csv(csv_file, [{"x": 1, "y": 10.0, "current": 0.1}])
+
+    result = runner.invoke(
+        app,
+        [
+            "plot",
+            str(csv_file),
+            "x",
+            "y",
+            "--filter",
+            "current=>0.5",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "Invalid --filter expression" in result.stdout
+
+
 def test_plot_line_rejects_categorical_x_values(tmp_path: Path) -> None:
     csv_file = tmp_path / "categorical_line.csv"
     _write_csv(

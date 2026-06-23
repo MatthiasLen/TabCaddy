@@ -6,11 +6,11 @@ TabCaddy is a dataset-centric CLI for tabular data engineering workflows. It hel
 
 Use it to:
 
-- profile files and folders quickly
+- profile files and folders
 - inspect sample rows before modeling
 - detect schema drift and dominant schema groups
 - compile heterogeneous raw data into a reusable Parquet dataset
-- scaffold and run Python transforms
+- scaffold and run Python transforms with Polars
 - diff dataset versions at metadata, statistics, or full levels
 - merge incoming drops into an archive with conflict-aware validation
 
@@ -85,25 +85,24 @@ tabcaddy merge incoming_cleaned/ archive/ --out merged_archive --on id
 tabcaddy compile merged_archive/ --interactive
 ```
 
-Note: compiling before transforming is still useful when you want to lock onto one schema first, or when the transform input is already a compiled dataset.
+Compile before transforming when you want to lock onto a single schema first, or when the transform input is already compiled.
 
 ### Transform Workflow Example
 
 If you are using `scaffold-transform` and `transform` for the first time, the usual loop is:
 
 1. generate a starter script from the source you want to clean
-2. replace the scaffold examples with your own Polars logic
+2. replace the scaffold examples with your Polars logic
 3. run the transform over the file, folder, or compiled dataset
 4. inspect or compile the transformed output
 
-Start by generating a scaffold from the raw folder:
+Generate a scaffold from the raw folder:
 
 ```bash
 tabcaddy scaffold-transform source_data/ --output transform_source_data.py
 ```
 
-The generated file includes observed schema comments and several ready-to-edit Polars examples. A typical edited transform looks like this:
-
+The scaffold includes observed schema comments and ready-to-edit examples. A typical edited transform looks like this:
 
 ```python
 import polars as pl
@@ -132,7 +131,7 @@ tabcaddy summary transformed_data/
 tabcaddy head transformed_data/ --n 5
 ```
 
-If you omit `transformed_data/`, TabCaddy creates a sibling output path with `_transformed` appended automatically.
+If you omit `transformed_data/`, TabCaddy creates a sibling output path with `_transformed` appended.
 
 ### Command Reference
 
@@ -145,7 +144,7 @@ tabcaddy summary <source> [--profile quick|standard|deep]
 Best default entry point for understanding a source.
 
 - `quick`: counts only
-- `standard`: metadata, schema overview, lightweight statistics, and warnings
+- `standard`: metadata, schema overview, lightweight statistics, warnings
 - `deep`: adds histograms, uniqueness estimates, and column hashes
 
 Example:
@@ -174,7 +173,7 @@ Use `--showmeta` to include metadata columns in output.
 tabcaddy schema <source>
 ```
 
-Focused schema analysis for schema groups, type changes, and non-dominant files. This command always uses quick schema analysis and does not take `--profile`.
+Focused schema analysis for schema groups, type changes, and non-dominant files. It always uses quick schema analysis and does not take `--profile`.
 
 `plot`
 
@@ -190,7 +189,7 @@ Plots one or more y-columns against the same x-column in the terminal.
 - `--interpolation` controls line chart x-resampling; defaults to `linear` and also supports `nearest`
 - line plots fail on duplicate `x` by default unless `--aggregate-x` is provided
 - line plots auto-sort `x` by default; use `--fail-on-x-unsorted` for strict mode
-- when multiple y-columns are provided, TabCaddy renders stacked plots (one per y) with distinct line colors and matching metadata color cues
+- multiple y-columns render as stacked plots
 - rows with null values or non-numeric `y` values are dropped and reported as warnings
 
 `compile`
@@ -208,13 +207,7 @@ Compiles a folder into a standardized Parquet-backed dataset.
 - compile output includes a coverage summary, for example `compiled X of Y supported files`
 - unreadable/corrupt files are not compiled; they are counted in coverage and listed in warnings
 
-Validation checks:
-
-- compiled schema columns match expected selected-schema columns (plus `_source_file`)
-- selected source file coverage matches `_source_file` values in compiled parquet
-- total row count in compiled parquet matches selected source row count
-
-If source files are corrupt/unreadable, compile still succeeds when possible, and the coverage summary makes the partial compile explicit.
+`--validate` checks selected-schema columns, `_source_file` coverage, and total row counts. If some source files are corrupt or unreadable, compile still succeeds when possible and the coverage summary makes the partial result explicit.
 
 `scaffold-transform`
 
@@ -226,7 +219,7 @@ Generates a Python transform scaffold based on observed schemas.
 
 - output is a ready-to-edit Python file that uses Polars
 - the scaffold includes comments for each observed schema group and example transforms
-- a good default pattern is: scaffold once, edit the script, then run `tabcaddy transform`
+- default loop: scaffold once, edit the script, then run `tabcaddy transform`
 
 `transform`
 
@@ -246,9 +239,6 @@ Supported signatures:
 ```python
 def transform(df):
     return df
-```
-
-```python
 def transform(df, context):
     return df
 ```
@@ -267,12 +257,7 @@ def transform(df, context):
 tabcaddy diff <left> <right> [--level metadata|statistics|full] [--on COLUMN ...] [--row-examples N]
 ```
 
-Supported comparisons:
-
-- file vs file
-- folder vs folder
-- file vs folder (either side)
-- compiled dataset vs compiled dataset
+Supported comparisons: file vs file, folder vs folder, file vs folder (either side), and compiled dataset vs compiled dataset.
 
 Unsupported combinations (for example file vs compiled dataset) are rejected.
 
@@ -289,19 +274,15 @@ Levels:
 - `statistics`: metadata plus column-stat changes
 - `full`: metadata, schema, statistics, and optional key-aware row-level explainability
 
-Key-aware row-level explainability (full level):
+Key-aware row-level explainability at `full` level:
 
 - provide one or more `--on` columns to compare records by business key
 - output includes row counts by class: added, removed, updated, unchanged
-- output includes updated-row examples showing key values and field-level before/after deltas
+- output can include updated-row examples with field-level before/after deltas
 - `--row-examples` limits displayed examples while preserving aggregate counts
 - key columns must exist on both sides and be unique per side for row-level comparison
 
-Example:
-
-```bash
-tabcaddy diff customer_left.csv customer_right.csv --level full --on customer_id --row-examples 25
-```
+Example: `tabcaddy diff customer_left.csv customer_right.csv --level full --on customer_id --row-examples 25`
 
 `merge`
 
@@ -311,7 +292,7 @@ tabcaddy merge <source> <target> (--out <path> | --inplace) [--on COLUMN ...] [-
 
 Merges source rows into matching target files and preserves the target layout.
 
-Use `--dry` to preview matched and unmatched files, output destinations, schema issues, casts, and expected conflicts without writing output.
+Use `--dry` to preview matches, output destinations, schema issues, casts, and expected conflicts without writing output.
 
 Core rules:
 
@@ -325,7 +306,7 @@ Strategy and keys:
 
 - default `append`: keeps target rows and appends source rows not already present
 - `upsert`: requires `--on` and replaces matching target keys with source rows
-- `--on` is optional in append mode, but enables conflict-aware duplicate-key validation
+- `--on` is optional in append mode and enables conflict-aware duplicate-key validation
 
 Schema behavior:
 
@@ -369,15 +350,9 @@ Show all commands:
 tabcaddy --help
 ```
 
-Show command-specific help:
+Show command-specific help with `tabcaddy <command> --help`, for example:
 
 ```bash
-tabcaddy summary --help
-tabcaddy schema --help
-tabcaddy scaffold-transform --help
-tabcaddy head --help
-tabcaddy compile --help
-tabcaddy transform --help
-tabcaddy diff --help
+tabcaddy plot --help
 tabcaddy merge --help
 ```

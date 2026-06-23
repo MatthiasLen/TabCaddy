@@ -5,6 +5,7 @@ from datetime import date, datetime, time
 from decimal import Decimal
 import math
 from pathlib import Path
+import re
 from typing import Any, Literal
 
 import polars as pl
@@ -17,6 +18,17 @@ from tabcaddy.shared.dataset_io import scan_dataframe, scan_parquet_dataset
 _SUPPORTED_AGGREGATIONS = {"mean", "median", "min", "max", "sum", "count"}
 _NAIVE_UNIX_EPOCH = datetime(1970, 1, 1)
 _DEFAULT_FOLDER_MAX_FILES = 5
+_FILTER_PATTERN = re.compile(
+    r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*(==|!=|>=|<=|>|<)\s*(.+?)\s*$"
+)
+_FILTER_OPERATORS = {
+    "==": lambda lhs, rhs: lhs == rhs,
+    "!=": lambda lhs, rhs: lhs != rhs,
+    ">": lambda lhs, rhs: lhs > rhs,
+    ">=": lambda lhs, rhs: lhs >= rhs,
+    "<": lambda lhs, rhs: lhs < rhs,
+    "<=": lambda lhs, rhs: lhs <= rhs,
+}
 
 
 @dataclass
@@ -70,6 +82,7 @@ class PlotDataset:
         fail_on_x_duplicates: bool = False,
         fail_on_unsorted_x: bool = False,
         folder_max_files: int = _DEFAULT_FOLDER_MAX_FILES,
+        filter_expr: str | None = None,
     ) -> PlotRunResult:
         if folder_max_files < 1:
             raise ValueError("-n must be greater than or equal to 1.")
@@ -85,6 +98,7 @@ class PlotDataset:
                 fail_on_x_duplicates=fail_on_x_duplicates,
                 fail_on_unsorted_x=fail_on_unsorted_x,
                 folder_max_files=folder_max_files,
+                filter_expr=filter_expr,
             )
 
         lazyframe = self._build_lazyframe(source)
@@ -97,6 +111,7 @@ class PlotDataset:
             line_interpolation=line_interpolation,
             fail_on_x_duplicates=fail_on_x_duplicates,
             fail_on_unsorted_x=fail_on_unsorted_x,
+            filter_expr=filter_expr,
         )
 
         return PlotRunResult(
@@ -118,6 +133,7 @@ class PlotDataset:
         fail_on_x_duplicates: bool,
         fail_on_unsorted_x: bool,
         folder_max_files: int,
+        filter_expr: str | None,
     ) -> PlotRunResult:
         files = iter_dataset_files(source)
         if not files:
@@ -136,6 +152,7 @@ class PlotDataset:
                 line_interpolation=line_interpolation,
                 fail_on_x_duplicates=fail_on_x_duplicates,
                 fail_on_unsorted_x=fail_on_unsorted_x,
+                filter_expr=filter_expr,
             )
             file_results.append(PlotFileResult(path=path, result=result))
 
@@ -168,6 +185,7 @@ class PlotDataset:
         line_interpolation: Literal["linear", "nearest"],
         fail_on_x_duplicates: bool,
         fail_on_unsorted_x: bool,
+        filter_expr: str | None,
     ) -> PlotResult:
         schema = lazyframe.collect_schema()
         x_dtype, y_dtype = self._resolve_plot_dtypes(
@@ -179,6 +197,8 @@ class PlotDataset:
             x_column=x_column,
             y_column=y_column,
             y_dtype=y_dtype,
+            filter_expr=filter_expr,
+            schema=schema,
         )
 
         duplicate_x_count = self._duplicate_count(filtered)
@@ -330,10 +350,17 @@ class PlotDataset:
         x_column: str,
         y_column: str,
         y_dtype: pl.DataType,
+        filter_expr: str | None,
+        schema: pl.Schema,
     ) -> tuple[pl.DataFrame, int, int, list[str]]:
         warnings: list[str] = []
+        filtered_lazyframe = lazyframe
+        if filter_expr is not None:
+            filtered_lazyframe = lazyframe.filter(
+                self._build_filter_predicate(filter_expr, schema=schema)
+            )
         y_to_float = self._y_to_float_expr(y_column, y_dtype)
-        frame = lazyframe.select(
+        frame = filtered_lazyframe.select(
             [
                 pl.col(x_column).alias("_x"),
                 pl.col(y_column).alias("_y_raw"),
@@ -366,6 +393,46 @@ class PlotDataset:
         if y_dtype == pl.Boolean:
             return pl.col(y_column).cast(pl.Int8).cast(pl.Float64)
         return pl.col(y_column).cast(pl.Float64, strict=False)
+
+    def _build_filter_predicate(self, expression: str, *, schema: pl.Schema) -> pl.Expr:
+        match = _FILTER_PATTERN.match(expression)
+        if match is None:
+            raise ValueError(
+                "Invalid --filter expression. Expected format: COLUMN OP VALUE "
+                "with OP in ==, !=, >, >=, <, <=."
+            )
+
+        column, operator, raw_value = match.group(1), match.group(2), match.group(3)
+        if column not in schema:
+            raise ValueError(f"Column not found in --filter: {column}")
+        return _FILTER_OPERATORS[operator](
+            pl.col(column),
+            self._parse_filter_value(raw_value),
+        )
+
+    def _parse_filter_value(self, value: str) -> bool | int | float | str:
+        stripped = value.strip()
+        if (
+            len(stripped) >= 2
+            and stripped[0] == stripped[-1]
+            and stripped[0]
+            in {
+                '"',
+                "'",
+            }
+        ):
+            return stripped[1:-1]
+
+        lowered = stripped.lower()
+        if lowered in {"true", "false"}:
+            return lowered == "true"
+
+        for parser in (int, float):
+            try:
+                return parser(stripped)
+            except ValueError:
+                continue
+        return stripped
 
     def _auto_kind_warnings(
         self,
