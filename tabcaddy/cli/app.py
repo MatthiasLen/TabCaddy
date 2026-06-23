@@ -398,7 +398,7 @@ def plot(
 
     try:
         source_resolved = resolve_source(source)
-        plot_dataset = PlotDataset(filter_expr=filter_expr)
+        plot_dataset = PlotDataset()
         results_by_y = [
             (
                 y_column,
@@ -412,6 +412,7 @@ def plot(
                     fail_on_x_duplicates=fail_on_x_duplicates,
                     fail_on_unsorted_x=fail_on_unsorted_x,
                     folder_max_files=n,
+                    filter_expr=filter_expr,
                 ),
             )
             for y_column in y_columns

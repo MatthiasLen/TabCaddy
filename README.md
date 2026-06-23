@@ -63,7 +63,7 @@ uv add tabcaddy
 
 ### Quick Start
 
-Typical curation flow:
+Typical curation flow (inspect, clean, compile):
 
 ```bash
 tabcaddy summary data/
@@ -74,7 +74,7 @@ tabcaddy transform data/ transform_template.py cleaned_data/
 tabcaddy compile cleaned_data/ --interactive
 ```
 
-Typical incremental ingest flow:
+Typical incremental ingest flow (clean, merge, compile):
 
 ```bash
 tabcaddy scaffold-transform incoming/
@@ -89,7 +89,7 @@ Compile before transforming when you want to lock onto a single schema first, or
 
 ### Transform Workflow Example
 
-First-time transform loop:
+If you are using `scaffold-transform` and `transform` for the first time, the usual loop is:
 
 1. generate a starter script from the source you want to clean
 2. replace the scaffold examples with your Polars logic
@@ -108,6 +108,9 @@ The scaffold includes observed schema comments and ready-to-edit examples. A typ
 import polars as pl
 
 def transform(df: pl.DataFrame, context=None) -> pl.DataFrame:
+    # In this example, the transformation fills missing `status` values, casts
+    # `amount` to a numeric type, and adds the source filename as a new column.
+
     if "status" in df.columns:
         df = df.with_columns(pl.col("status").fill_null("unknown"))
 
@@ -180,9 +183,9 @@ tabcaddy plot <source> <column_x> <column_y> [<column_y> ...] [--kind auto|line|
 
 Plots one or more y-columns against the same x-column in the terminal.
 
-- `column_x`: numeric or temporal for line plots; categorical/string x is accepted for scatter only
-- `column_y`: one or more y-columns; each must be numeric, boolean (`true=1`, `false=0`), or castable to `Float64`
-- `--kind auto` picks `line` for temporal `x`, and for numeric `x` only when values are monotonic and unique; otherwise it picks `scatter`
+- `column_x`: numeric (`Int`, `Float`, `Decimal`) or temporal (`Date`, `Datetime`, `Time`, `Duration`); categorical/string x is accepted for scatter only
+- `column_y`: one or more y-columns; each must be numeric, boolean (`true=1`, `false=0`), or castable to `Float64`; strings and nested types are not supported
+- `--kind auto` picks `line` for temporal `x` and for numeric `x` only when values are monotonic and unique; otherwise it picks `scatter`
 - `--interpolation` controls line chart x-resampling; defaults to `linear` and also supports `nearest`
 - line plots fail on duplicate `x` by default unless `--aggregate-x` is provided
 - line plots auto-sort `x` by default; use `--fail-on-x-unsorted` for strict mode
@@ -329,8 +332,13 @@ Output and safety:
 Examples:
 
 ```bash
+# Preview a merge plan
 tabcaddy merge incoming/ archive/ --out merged_archive/ --on customer_id --dry
+
+# Append mode (default)
 tabcaddy merge incoming/ archive/ --out merged_archive/ --strategy append
+
+# Upsert mode
 tabcaddy merge incoming/ archive/ --out merged_archive/ --strategy upsert --on customer_id
 ```
 

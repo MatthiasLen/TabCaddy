@@ -69,9 +69,6 @@ class PlotRunResult:
 
 
 class PlotDataset:
-    def __init__(self, *, filter_expr: str | None = None) -> None:
-        self._filter_expr = filter_expr
-
     def run(
         self,
         source: DatasetSource,
@@ -85,6 +82,7 @@ class PlotDataset:
         fail_on_x_duplicates: bool = False,
         fail_on_unsorted_x: bool = False,
         folder_max_files: int = _DEFAULT_FOLDER_MAX_FILES,
+        filter_expr: str | None = None,
     ) -> PlotRunResult:
         if folder_max_files < 1:
             raise ValueError("-n must be greater than or equal to 1.")
@@ -100,7 +98,7 @@ class PlotDataset:
                 fail_on_x_duplicates=fail_on_x_duplicates,
                 fail_on_unsorted_x=fail_on_unsorted_x,
                 folder_max_files=folder_max_files,
-                filter_expr=self._filter_expr,
+                filter_expr=filter_expr,
             )
 
         lazyframe = self._build_lazyframe(source)
@@ -113,7 +111,7 @@ class PlotDataset:
             line_interpolation=line_interpolation,
             fail_on_x_duplicates=fail_on_x_duplicates,
             fail_on_unsorted_x=fail_on_unsorted_x,
-            filter_expr=self._filter_expr,
+            filter_expr=filter_expr,
         )
 
         return PlotRunResult(

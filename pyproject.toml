@@ -1,6 +1,6 @@
 [project]
 name = "tabcaddy"
-version = "0.1.8"
+version = "0.1.9"
 description = "Dataset-centric CLI toolkit for exploring, compiling, transforming, and diffing tabular data"
 readme = "README.md"
 requires-python = ">=3.11"

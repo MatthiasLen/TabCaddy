@@ -1052,7 +1052,10 @@ def test_plot_filter_prefilters_rows_for_line_plot(tmp_path: Path) -> None:
     assert result.exit_code == 0
     assert "Plot" in result.stdout
     assert "Plotted rows" in result.stdout
-    assert "2" in result.stdout
+    plotted_rows_line = next(
+        line for line in result.stdout.splitlines() if "Plotted rows" in line
+    )
+    assert "2" in plotted_rows_line
 
 
 def test_plot_filter_applies_to_multiple_y_columns(tmp_path: Path) -> None:
