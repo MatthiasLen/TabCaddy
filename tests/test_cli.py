@@ -806,7 +806,8 @@ def test_plot_multiple_y_columns_renders_stacked_sections(tmp_path: Path) -> Non
 
     assert result.exit_code == 0
     assert "Plot" in result.stdout
-    assert "Y" in result.stdout
+    assert "Field" in result.stdout
+    assert "Plotted rows" in result.stdout
     assert "y_a" in result.stdout
     assert "y_b" in result.stdout
 

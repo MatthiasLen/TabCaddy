@@ -23,7 +23,11 @@ from tabcaddy.rendering.console import RenderProfile
 from tabcaddy.rendering.charts.line_chart import _resample_by_x
 from tabcaddy.rendering.charts.line_chart import render_line_chart
 from tabcaddy.rendering.charts.scatter_chart import render_scatter_chart
+from tabcaddy.plot.service import PlotFileResult
+from tabcaddy.plot.service import PlotResult
+from tabcaddy.plot.service import PlotRunResult
 from tabcaddy.rendering.views.diff import build_diff_view
+from tabcaddy.rendering.views.plot import build_multi_y_plot_view
 from tabcaddy.rendering.views.plot import _resolve_chart_width
 from tabcaddy.rendering.views.schema import build_schema_view
 from tabcaddy.rendering.views.summary import build_summary_view
@@ -301,6 +305,15 @@ def test_scatter_chart_supports_ascii_axis_chars() -> None:
     assert "-" in chart
 
 
+def test_scatter_chart_single_x_uses_true_footer_labels() -> None:
+    chart = render_scatter_chart([(10.0, 5.0)], width=20, height=6)
+
+    footer = chart.splitlines()[-1]
+    assert "10" in footer
+    assert "9.5" not in footer
+    assert "10.5" not in footer
+
+
 def test_plot_chart_width_uses_full_width_for_narrow_console() -> None:
     width = _resolve_chart_width(console_width=80, point_count=500)
 
@@ -317,3 +330,73 @@ def test_plot_chart_width_scales_for_dense_data_on_wide_console() -> None:
     width = _resolve_chart_width(console_width=140, point_count=500)
 
     assert width == 116
+
+
+def test_multi_y_plot_metadata_uses_per_series_values() -> None:
+    result_a = PlotResult(
+        chart_kind="line",
+        x_column="x",
+        y_column="y_a",
+        x_axis_kind="numeric",
+        x_axis_time_unit=None,
+        x_axis_timezone=None,
+        row_count=5,
+        plotted_rows=4,
+        dropped_rows=1,
+        duplicate_x_count=0,
+        sorted_x=True,
+        auto_sorted=False,
+        aggregated=False,
+        line_interpolation="nearest",
+        line_x_values=[1.0, 2.0, 3.0, 4.0],
+        line_values=[10.0, 11.0, 12.0, 13.0],
+    )
+    result_b = PlotResult(
+        chart_kind="line",
+        x_column="x",
+        y_column="y_b",
+        x_axis_kind="numeric",
+        x_axis_time_unit=None,
+        x_axis_timezone=None,
+        row_count=5,
+        plotted_rows=2,
+        dropped_rows=3,
+        duplicate_x_count=0,
+        sorted_x=True,
+        auto_sorted=False,
+        aggregated=False,
+        line_interpolation="nearest",
+        line_x_values=[1.0, 4.0],
+        line_values=[100.0, 130.0],
+    )
+    run_a = PlotRunResult(
+        plots=[PlotFileResult(path=Path("a.csv"), result=result_a)],
+        total_files=1,
+        plotted_files=1,
+        skipped_files=0,
+    )
+    run_b = PlotRunResult(
+        plots=[PlotFileResult(path=Path("a.csv"), result=result_b)],
+        total_files=1,
+        plotted_files=1,
+        skipped_files=0,
+    )
+
+    console = create_console(record=True, width=120, legacy_windows=False)
+    console.print(build_multi_y_plot_view([("y_a", run_a), ("y_b", run_b)]))
+    output = console.export_text()
+
+    plotted_rows_line = next(
+        line for line in output.splitlines() if "Plotted rows" in line
+    )
+    dropped_rows_line = next(
+        line for line in output.splitlines() if "Dropped rows" in line
+    )
+
+    assert output.count("Plotted rows") == 1
+    assert "y_a" in output
+    assert "y_b" in output
+    assert "4" in plotted_rows_line
+    assert "2" in plotted_rows_line
+    assert "1" in dropped_rows_line
+    assert "3" in dropped_rows_line

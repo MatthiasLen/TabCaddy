@@ -115,12 +115,7 @@ def build_multi_y_plot_view(
     if not results_by_y:
         return "No plot data"
 
-    first_plot_result = results_by_y[0][1].plots[0].result
-    metadata = _build_plot_metadata_table(
-        first_plot_result,
-        render=render,
-        y_value=_build_multi_y_value_text(results_by_y),
-    )
+    metadata = _build_multi_y_plot_metadata_table(results_by_y, render=render)
 
     blocks: list[object] = []
     blocks.append(metadata)
@@ -141,13 +136,128 @@ def build_multi_y_plot_view(
     return Group(*blocks)
 
 
-def _build_multi_y_value_text(results_by_y: list[tuple[str, PlotRunResult]]) -> Text:
-    y_text = Text()
+def _summarize_int(values: list[int]) -> str:
+    if not values:
+        return "n/a"
+    if len(values) == 1:
+        return str(values[0])
+    minimum = min(values)
+    maximum = max(values)
+    if minimum == maximum:
+        return str(minimum)
+    return f"{minimum}..{maximum}"
+
+
+def _summarize_bool(values: list[bool]) -> str:
+    if not values:
+        return "n/a"
+    unique = set(values)
+    if len(unique) > 1:
+        return "mixed"
+    return "yes" if values[0] else "no"
+
+
+def _summarize_str(values: list[str]) -> str:
+    if not values:
+        return "n/a"
+    unique = sorted(set(values))
+    if len(unique) == 1:
+        return unique[0]
+    return " / ".join(unique)
+
+
+def _series_cell_value(
+    plot_run_result: PlotRunResult,
+    selector,
+    *,
+    summarizer,
+) -> str:
+    series_values = [selector(file_plot.result) for file_plot in plot_run_result.plots]
+    return summarizer(series_values)
+
+
+def _build_multi_y_plot_metadata_table(
+    results_by_y: list[tuple[str, PlotRunResult]],
+    *,
+    render: RenderProfile,
+) -> object:
+    metadata = render.table(title="Plot", expand=False)
+    metadata.add_column("Field", style="cyan")
     for index, (y_column, _) in enumerate(results_by_y):
-        if index > 0:
-            y_text.append("\n")
-        y_text.append(y_column, style=get_line_series_rich_style(index))
-    return y_text
+        metadata.add_column(y_column, style=get_line_series_rich_style(index))
+
+    def add_series_row(
+        label: str,
+        selector,
+        *,
+        summarizer,
+    ) -> None:
+        metadata.add_row(
+            label,
+            *[
+                _series_cell_value(plot_result, selector, summarizer=summarizer)
+                for _, plot_result in results_by_y
+            ],
+        )
+
+    add_series_row("Kind", lambda result: result.chart_kind, summarizer=_summarize_str)
+    add_series_row("X", lambda result: result.x_column, summarizer=_summarize_str)
+    add_series_row(
+        "Input rows",
+        lambda result: result.row_count,
+        summarizer=_summarize_int,
+    )
+    add_series_row(
+        "Plotted rows",
+        lambda result: result.plotted_rows,
+        summarizer=_summarize_int,
+    )
+    add_series_row(
+        "Dropped rows",
+        lambda result: result.dropped_rows,
+        summarizer=_summarize_int,
+    )
+    add_series_row(
+        "Duplicate x",
+        lambda result: result.duplicate_x_count,
+        summarizer=_summarize_int,
+    )
+    add_series_row(
+        "Sorted x",
+        lambda result: result.sorted_x,
+        summarizer=_summarize_bool,
+    )
+    add_series_row(
+        "Auto-sorted",
+        lambda result: result.auto_sorted,
+        summarizer=_summarize_bool,
+    )
+    add_series_row(
+        "Aggregated",
+        lambda result: result.aggregated,
+        summarizer=_summarize_bool,
+    )
+    add_series_row(
+        "Interpolation",
+        lambda result: result.line_interpolation or "n/a",
+        summarizer=_summarize_str,
+    )
+    add_series_row(
+        "X Axis Kind",
+        lambda result: result.x_axis_kind,
+        summarizer=_summarize_str,
+    )
+    add_series_row(
+        "X Time Unit",
+        lambda result: result.x_axis_time_unit or "n/a",
+        summarizer=_summarize_str,
+    )
+    add_series_row(
+        "X Time Zone",
+        lambda result: result.x_axis_timezone or "n/a",
+        summarizer=_summarize_str,
+    )
+    return metadata
 
 
 def _build_plot_metadata_table(

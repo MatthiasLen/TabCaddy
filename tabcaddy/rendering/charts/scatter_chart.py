@@ -38,6 +38,7 @@ def render_scatter_chart(
     y_values = [y for _, y in finite_points]
     min_x, max_x = min(x_values), max(x_values)
     min_y, max_y = min(y_values), max(y_values)
+    label_min_x, label_max_x = min_x, max_x
 
     if math.isclose(min_x, max_x, rel_tol=1e-9, abs_tol=1e-9):
         min_x -= 0.5
@@ -64,10 +65,14 @@ def render_scatter_chart(
 
     lines.append(" " * (label_width + 1) + axis_corner_char + x_axis_char * width)
     min_x_label = (
-        x_tick_formatter(min_x) if x_tick_formatter is not None else _format_axis(min_x)
+        x_tick_formatter(label_min_x)
+        if x_tick_formatter is not None
+        else _format_axis(label_min_x)
     )
     max_x_label = (
-        x_tick_formatter(max_x) if x_tick_formatter is not None else _format_axis(max_x)
+        x_tick_formatter(label_max_x)
+        if x_tick_formatter is not None
+        else _format_axis(label_max_x)
     )
     lines.append(
         " " * (label_width + 2)
