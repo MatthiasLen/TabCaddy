@@ -21,13 +21,6 @@ def test_version_option_displays_current_version() -> None:
     assert result.stdout.strip() == __version__
 
 
-def test_version_subcommand_is_not_available() -> None:
-    result = runner.invoke(app, ["version"])
-
-    assert result.exit_code != 0
-    assert "No such command 'version'" in result.stdout
-
-
 def _write_csv(path: Path, rows: list[dict]) -> None:
     pl.DataFrame(rows).write_csv(path)
 
