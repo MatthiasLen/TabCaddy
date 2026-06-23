@@ -170,175 +170,81 @@ class PlotDataset:
         fail_on_unsorted_x: bool,
     ) -> PlotResult:
         schema = lazyframe.collect_schema()
-        if x_column not in schema:
-            raise ValueError(f"Column not found: {x_column}")
-        if y_column not in schema:
-            raise ValueError(f"Column not found: {y_column}")
-
-        x_dtype = schema[x_column]
-        y_dtype = schema[y_column]
-        x_axis_kind = self._infer_x_axis_kind(x_dtype)
-        x_axis_time_unit: Literal["epoch_seconds"] | None = None
-        x_axis_timezone: Literal["UTC"] | None = None
-        if x_axis_kind == "temporal":
-            x_axis_time_unit = "epoch_seconds"
-            x_axis_timezone = "UTC"
-
-        if y_dtype.is_nested():
-            raise ValueError(
-                f"Column '{y_column}' is not plottable (nested type: {y_dtype})."
-            )
-
-        warnings: list[str] = []
-
-        # Boolean cannot be cast directly to Float64 in Polars; route via Int8 (true=1, false=0).
-        y_to_float: pl.Expr
-        if y_dtype == pl.Boolean:
-            y_to_float = pl.col(y_column).cast(pl.Int8).cast(pl.Float64)
-        else:
-            y_to_float = pl.col(y_column).cast(pl.Float64, strict=False)
-
-        frame = lazyframe.select(
-            [
-                pl.col(x_column).alias("_x"),
-                pl.col(y_column).alias("_y_raw"),
-                y_to_float.alias("_y"),
-            ]
-        ).collect(engine="auto")
-
-        row_count = frame.height
-        cast_failed = frame.filter(
-            pl.col("_y_raw").is_not_null() & pl.col("_y").is_null()
-        ).height
-        if cast_failed:
-            warnings.append(
-                f"Dropped {cast_failed} rows where '{y_column}' could not be cast to numeric."
-            )
-
-        filtered = frame.filter(
-            pl.col("_x").is_not_null()
-            & pl.col("_y").is_not_null()
-            & pl.col("_y").is_finite()
-        ).select(["_x", "_y"])
-
-        dropped_rows = row_count - filtered.height
-        if filtered.height == 0:
-            raise ValueError(
-                "No plottable rows remain after filtering null/invalid values."
-            )
+        x_dtype, y_dtype = self._resolve_plot_dtypes(
+            schema, x_column=x_column, y_column=y_column
+        )
+        x_axis_kind, x_axis_time_unit, x_axis_timezone = self._axis_metadata(x_dtype)
+        filtered, row_count, dropped_rows, warnings = self._prepare_plot_frame(
+            lazyframe,
+            x_column=x_column,
+            y_column=y_column,
+            y_dtype=y_dtype,
+        )
 
         duplicate_x_count = self._duplicate_count(filtered)
         sorted_x = self._is_sorted(filtered)
-
         chart_kind = self._resolve_kind(
             kind,
             x_dtype,
             duplicate_x_count=duplicate_x_count,
             sorted_x=sorted_x,
         )
-        if (
-            kind == "auto"
-            and chart_kind == "scatter"
-            and self._is_numeric_dtype(x_dtype)
-        ):
-            if duplicate_x_count > 0:
-                warnings.append(
-                    "Auto-selected scatter because numeric x-values contain duplicates."
-                )
-            elif not sorted_x:
-                warnings.append(
-                    "Auto-selected scatter because numeric x-values are not monotonic."
-                )
-
-        if aggregate_x is not None and aggregate_x not in _SUPPORTED_AGGREGATIONS:
-            raise ValueError(
-                f"Unsupported aggregation: {aggregate_x}. Use one of: {', '.join(sorted(_SUPPORTED_AGGREGATIONS))}."
+        warnings.extend(
+            self._auto_kind_warnings(
+                kind,
+                chart_kind,
+                x_dtype,
+                duplicate_x_count=duplicate_x_count,
+                sorted_x=sorted_x,
             )
+        )
 
-        aggregated = False
-        if aggregate_x is not None:
-            filtered = self._aggregate_by_x(filtered, aggregate_x)
-            warnings.append(
-                f"Applied aggregation '{aggregate_x}' across duplicate x-values before plotting."
-            )
-            aggregated = True
-            duplicate_x_count = self._duplicate_count(filtered)
-            sorted_x = self._is_sorted(filtered)
-        elif duplicate_x_count > 0 and (chart_kind == "line" or fail_on_x_duplicates):
-            raise ValueError(
-                "Duplicate x-values detected. Use --aggregate-x to combine duplicates "
-                "or choose --kind scatter."
-            )
-
-        auto_sorted = False
-        if chart_kind == "line" and not sorted_x:
-            if fail_on_unsorted_x:
-                raise ValueError(
-                    "x-values are not sorted. Re-run without --fail-on-x-unsorted "
-                    "to auto-sort, or sort upstream."
-                )
-            filtered = filtered.sort("_x")
-            auto_sorted = True
-            sorted_x = True
-            warnings.append("x-values were auto-sorted for line plot rendering.")
+        filtered, duplicate_x_count, sorted_x, aggregated = self._apply_x_handling(
+            filtered,
+            chart_kind=chart_kind,
+            aggregate_x=aggregate_x,
+            fail_on_x_duplicates=fail_on_x_duplicates,
+            warnings=warnings,
+        )
+        filtered, sorted_x, auto_sorted = self._prepare_line_order(
+            filtered,
+            chart_kind=chart_kind,
+            sorted_x=sorted_x,
+            fail_on_unsorted_x=fail_on_unsorted_x,
+            warnings=warnings,
+        )
 
         if chart_kind == "line":
-            line_x_values = self._line_x_values(filtered)
-            line_values = [
-                float(value)
-                for value in filtered.get_column("_y").to_list()
-                if value is not None and math.isfinite(float(value))
-            ]
-            if len(line_x_values) != len(line_values):
-                raise ValueError(
-                    "Line plots require numeric or temporal x-values. "
-                    "Use --kind scatter for categorical x."
-                )
-            if not line_values:
-                raise ValueError("No numeric y-values available for line plot.")
-            return PlotResult(
-                chart_kind="line",
+            return self._build_line_result(
+                filtered,
                 x_column=x_column,
                 y_column=y_column,
                 x_axis_kind=x_axis_kind,
                 x_axis_time_unit=x_axis_time_unit,
                 x_axis_timezone=x_axis_timezone,
                 row_count=row_count,
-                plotted_rows=len(line_values),
                 dropped_rows=dropped_rows,
                 duplicate_x_count=duplicate_x_count,
                 sorted_x=sorted_x,
                 auto_sorted=auto_sorted,
                 aggregated=aggregated,
                 line_interpolation=line_interpolation,
-                line_x_values=line_x_values,
-                line_values=line_values,
                 warnings=warnings,
             )
-
-        scatter_points, scatter_warnings = self._to_scatter_points(
-            filtered, x_dtype=x_dtype
-        )
-        warnings.extend(scatter_warnings)
-        if not scatter_points:
-            raise ValueError("No finite points available for scatter plot.")
-
-        return PlotResult(
-            chart_kind="scatter",
+        return self._build_scatter_result(
+            filtered,
+            x_dtype=x_dtype,
             x_column=x_column,
             y_column=y_column,
             x_axis_kind=x_axis_kind,
             x_axis_time_unit=x_axis_time_unit,
             x_axis_timezone=x_axis_timezone,
             row_count=row_count,
-            plotted_rows=len(scatter_points),
             dropped_rows=dropped_rows,
             duplicate_x_count=duplicate_x_count,
             sorted_x=sorted_x,
             auto_sorted=auto_sorted,
             aggregated=aggregated,
-            line_interpolation=None,
-            scatter_points=scatter_points,
             warnings=warnings,
         )
 
@@ -384,6 +290,246 @@ class PlotDataset:
         if self._is_numeric_dtype(dtype):
             return "numeric"
         return "categorical"
+
+    def _resolve_plot_dtypes(
+        self,
+        schema: pl.Schema,
+        *,
+        x_column: str,
+        y_column: str,
+    ) -> tuple[pl.DataType, pl.DataType]:
+        if x_column not in schema:
+            raise ValueError(f"Column not found: {x_column}")
+        if y_column not in schema:
+            raise ValueError(f"Column not found: {y_column}")
+
+        x_dtype = schema[x_column]
+        y_dtype = schema[y_column]
+        if y_dtype.is_nested():
+            raise ValueError(
+                f"Column '{y_column}' is not plottable (nested type: {y_dtype})."
+            )
+        return x_dtype, y_dtype
+
+    def _axis_metadata(
+        self, x_dtype: pl.DataType
+    ) -> tuple[
+        Literal["numeric", "temporal", "categorical"],
+        Literal["epoch_seconds"] | None,
+        Literal["UTC"] | None,
+    ]:
+        x_axis_kind = self._infer_x_axis_kind(x_dtype)
+        if x_axis_kind == "temporal":
+            return x_axis_kind, "epoch_seconds", "UTC"
+        return x_axis_kind, None, None
+
+    def _prepare_plot_frame(
+        self,
+        lazyframe: pl.LazyFrame,
+        *,
+        x_column: str,
+        y_column: str,
+        y_dtype: pl.DataType,
+    ) -> tuple[pl.DataFrame, int, int, list[str]]:
+        warnings: list[str] = []
+        y_to_float = self._y_to_float_expr(y_column, y_dtype)
+        frame = lazyframe.select(
+            [
+                pl.col(x_column).alias("_x"),
+                pl.col(y_column).alias("_y_raw"),
+                y_to_float.alias("_y"),
+            ]
+        ).collect(engine="auto")
+
+        row_count = frame.height
+        cast_failed = frame.filter(
+            pl.col("_y_raw").is_not_null() & pl.col("_y").is_null()
+        ).height
+        if cast_failed:
+            warnings.append(
+                f"Dropped {cast_failed} rows where '{y_column}' could not be cast to numeric."
+            )
+
+        filtered = frame.filter(
+            pl.col("_x").is_not_null()
+            & pl.col("_y").is_not_null()
+            & pl.col("_y").is_finite()
+        ).select(["_x", "_y"])
+        if filtered.height == 0:
+            raise ValueError(
+                "No plottable rows remain after filtering null/invalid values."
+            )
+        return filtered, row_count, row_count - filtered.height, warnings
+
+    def _y_to_float_expr(self, y_column: str, y_dtype: pl.DataType) -> pl.Expr:
+        # Boolean cannot be cast directly to Float64 in Polars; route via Int8.
+        if y_dtype == pl.Boolean:
+            return pl.col(y_column).cast(pl.Int8).cast(pl.Float64)
+        return pl.col(y_column).cast(pl.Float64, strict=False)
+
+    def _auto_kind_warnings(
+        self,
+        kind: Literal["auto", "line", "scatter"],
+        chart_kind: Literal["line", "scatter"],
+        x_dtype: pl.DataType,
+        *,
+        duplicate_x_count: int,
+        sorted_x: bool,
+    ) -> list[str]:
+        if kind != "auto" or chart_kind != "scatter":
+            return []
+        if not self._is_numeric_dtype(x_dtype):
+            return []
+        if duplicate_x_count > 0:
+            return [
+                "Auto-selected scatter because numeric x-values contain duplicates."
+            ]
+        if not sorted_x:
+            return ["Auto-selected scatter because numeric x-values are not monotonic."]
+        return []
+
+    def _apply_x_handling(
+        self,
+        frame: pl.DataFrame,
+        *,
+        chart_kind: Literal["line", "scatter"],
+        aggregate_x: Literal["mean", "median", "min", "max", "sum", "count"] | None,
+        fail_on_x_duplicates: bool,
+        warnings: list[str],
+    ) -> tuple[pl.DataFrame, int, bool, bool]:
+        duplicate_x_count = self._duplicate_count(frame)
+        sorted_x = self._is_sorted(frame)
+
+        if aggregate_x is not None:
+            if aggregate_x not in _SUPPORTED_AGGREGATIONS:
+                raise ValueError(
+                    f"Unsupported aggregation: {aggregate_x}. Use one of: {', '.join(sorted(_SUPPORTED_AGGREGATIONS))}."
+                )
+            frame = self._aggregate_by_x(frame, aggregate_x)
+            warnings.append(
+                f"Applied aggregation '{aggregate_x}' across duplicate x-values before plotting."
+            )
+            return frame, self._duplicate_count(frame), self._is_sorted(frame), True
+
+        if duplicate_x_count > 0 and (chart_kind == "line" or fail_on_x_duplicates):
+            raise ValueError(
+                "Duplicate x-values detected. Use --aggregate-x to combine duplicates "
+                "or choose --kind scatter."
+            )
+        return frame, duplicate_x_count, sorted_x, False
+
+    def _prepare_line_order(
+        self,
+        frame: pl.DataFrame,
+        *,
+        chart_kind: Literal["line", "scatter"],
+        sorted_x: bool,
+        fail_on_unsorted_x: bool,
+        warnings: list[str],
+    ) -> tuple[pl.DataFrame, bool, bool]:
+        if chart_kind != "line" or sorted_x:
+            return frame, sorted_x, False
+        if fail_on_unsorted_x:
+            raise ValueError(
+                "x-values are not sorted. Re-run without --fail-on-x-unsorted "
+                "to auto-sort, or sort upstream."
+            )
+        warnings.append("x-values were auto-sorted for line plot rendering.")
+        return frame.sort("_x"), True, True
+
+    def _build_line_result(
+        self,
+        frame: pl.DataFrame,
+        *,
+        x_column: str,
+        y_column: str,
+        x_axis_kind: Literal["numeric", "temporal", "categorical"],
+        x_axis_time_unit: Literal["epoch_seconds"] | None,
+        x_axis_timezone: Literal["UTC"] | None,
+        row_count: int,
+        dropped_rows: int,
+        duplicate_x_count: int,
+        sorted_x: bool,
+        auto_sorted: bool,
+        aggregated: bool,
+        line_interpolation: Literal["linear", "nearest"],
+        warnings: list[str],
+    ) -> PlotResult:
+        line_x_values = self._line_x_values(frame)
+        line_values = [
+            float(value)
+            for value in frame.get_column("_y").to_list()
+            if value is not None and math.isfinite(float(value))
+        ]
+        if len(line_x_values) != len(line_values):
+            raise ValueError(
+                "Line plots require numeric or temporal x-values. "
+                "Use --kind scatter for categorical x."
+            )
+        if not line_values:
+            raise ValueError("No numeric y-values available for line plot.")
+        return PlotResult(
+            chart_kind="line",
+            x_column=x_column,
+            y_column=y_column,
+            x_axis_kind=x_axis_kind,
+            x_axis_time_unit=x_axis_time_unit,
+            x_axis_timezone=x_axis_timezone,
+            row_count=row_count,
+            plotted_rows=len(line_values),
+            dropped_rows=dropped_rows,
+            duplicate_x_count=duplicate_x_count,
+            sorted_x=sorted_x,
+            auto_sorted=auto_sorted,
+            aggregated=aggregated,
+            line_interpolation=line_interpolation,
+            line_x_values=line_x_values,
+            line_values=line_values,
+            warnings=warnings,
+        )
+
+    def _build_scatter_result(
+        self,
+        frame: pl.DataFrame,
+        *,
+        x_dtype: pl.DataType,
+        x_column: str,
+        y_column: str,
+        x_axis_kind: Literal["numeric", "temporal", "categorical"],
+        x_axis_time_unit: Literal["epoch_seconds"] | None,
+        x_axis_timezone: Literal["UTC"] | None,
+        row_count: int,
+        dropped_rows: int,
+        duplicate_x_count: int,
+        sorted_x: bool,
+        auto_sorted: bool,
+        aggregated: bool,
+        warnings: list[str],
+    ) -> PlotResult:
+        scatter_points, scatter_warnings = self._to_scatter_points(
+            frame, x_dtype=x_dtype
+        )
+        warnings.extend(scatter_warnings)
+        if not scatter_points:
+            raise ValueError("No finite points available for scatter plot.")
+        return PlotResult(
+            chart_kind="scatter",
+            x_column=x_column,
+            y_column=y_column,
+            x_axis_kind=x_axis_kind,
+            x_axis_time_unit=x_axis_time_unit,
+            x_axis_timezone=x_axis_timezone,
+            row_count=row_count,
+            plotted_rows=len(scatter_points),
+            dropped_rows=dropped_rows,
+            duplicate_x_count=duplicate_x_count,
+            sorted_x=sorted_x,
+            auto_sorted=auto_sorted,
+            aggregated=aggregated,
+            line_interpolation=None,
+            scatter_points=scatter_points,
+            warnings=warnings,
+        )
 
     def _duplicate_count(self, frame: pl.DataFrame) -> int:
         x_values = frame.get_column("_x")
