@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 import json
 from pathlib import Path
 
@@ -1022,6 +1023,26 @@ def test_plot_auto_selects_scatter_for_duplicate_numeric_x(tmp_path: Path) -> No
     assert result.exit_code == 0
     assert "scatter" in result.stdout
     assert "contain duplicates" in result.stdout
+
+
+def test_plot_auto_selects_scatter_for_duplicate_temporal_x(tmp_path: Path) -> None:
+    parquet_file = tmp_path / "auto_scatter_temporal_duplicates.parquet"
+    pl.DataFrame(
+        {
+            "ts": [
+                datetime(2026, 1, 1, 0, 0, 0),
+                datetime(2026, 1, 1, 0, 0, 0),
+                datetime(2026, 1, 1, 0, 1, 0),
+            ],
+            "y": [10.0, 12.0, 20.0],
+        }
+    ).write_parquet(parquet_file)
+
+    result = runner.invoke(app, ["plot", str(parquet_file), "ts", "y"])
+
+    assert result.exit_code == 0
+    assert "scatter" in result.stdout
+    assert "temporal x-values contain duplicates" in result.stdout
 
 
 def test_plot_filter_prefilters_rows_for_line_plot(tmp_path: Path) -> None:

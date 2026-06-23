@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 import math
 from pathlib import Path
@@ -293,6 +293,8 @@ class PlotDataset:
         if kind in {"line", "scatter"}:
             return kind
         if self._is_temporal_dtype(x_dtype):
+            if duplicate_x_count > 0:
+                return "scatter"
             return "line"
         if self._is_numeric_dtype(x_dtype):
             if duplicate_x_count > 0:
@@ -445,13 +447,19 @@ class PlotDataset:
     ) -> list[str]:
         if kind != "auto" or chart_kind != "scatter":
             return []
-        if not self._is_numeric_dtype(x_dtype):
+        is_numeric_x = self._is_numeric_dtype(x_dtype)
+        is_temporal_x = self._is_temporal_dtype(x_dtype)
+        if not is_numeric_x and not is_temporal_x:
             return []
         if duplicate_x_count > 0:
+            if is_temporal_x:
+                return [
+                    "Auto-selected scatter because temporal x-values contain duplicates."
+                ]
             return [
                 "Auto-selected scatter because numeric x-values contain duplicates."
             ]
-        if not sorted_x:
+        if is_numeric_x and not sorted_x:
             return ["Auto-selected scatter because numeric x-values are not monotonic."]
         return []
 
@@ -659,6 +667,8 @@ class PlotDataset:
             return float(value)
         if isinstance(value, Decimal):
             return float(value)
+        if isinstance(value, timedelta):
+            return value.total_seconds()
         if isinstance(value, datetime):
             if value.tzinfo is None:
                 return (value - _NAIVE_UNIX_EPOCH).total_seconds()
