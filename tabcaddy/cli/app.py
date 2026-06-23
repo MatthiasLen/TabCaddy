@@ -339,7 +339,7 @@ def plot(
     ),
     line_interpolation: Literal["linear", "nearest"] = typer.Option(
         "linear",
-        "--line-interpolation",
+        "--interpolation",
         help="Interpolation mode used when rendering line charts.",
     ),
     fail_on_x_duplicates: bool = typer.Option(
@@ -349,16 +349,14 @@ def plot(
     ),
     fail_on_unsorted_x: bool = typer.Option(
         False,
-        "--fail-on-unsorted-x",
+        "--fail-on-x-unsorted",
         help="Fail instead of auto-sorting x-values for line plots.",
     ),
-    folder_max_files: int = typer.Option(
+    n: int = typer.Option(
         5,
-        "--folder-max-files",
-        help=(
-            "Maximum number of files to plot from a folder input. "
-            "Use a larger value to include more files."
-        ),
+        "--n",
+        "-n",
+        help=("Maximum number of files to plot from a folder input. "),
     ),
 ) -> None:
     console = create_console()
@@ -374,7 +372,7 @@ def plot(
             line_interpolation=line_interpolation,
             fail_on_x_duplicates=fail_on_x_duplicates,
             fail_on_unsorted_x=fail_on_unsorted_x,
-            folder_max_files=folder_max_files,
+            folder_max_files=n,
         )
     except pl.exceptions.PolarsError as error:
         console.print(f"Failed to read input data for plot: {error}")

@@ -799,7 +799,7 @@ def test_plot_line_uses_nearest_interpolation_when_requested(tmp_path: Path) -> 
             "y",
             "--kind",
             "line",
-            "--line-interpolation",
+            "--interplotation",
             "nearest",
         ],
     )
@@ -899,7 +899,7 @@ def test_plot_line_fails_for_unsorted_x_when_strict_option_is_set(
             "y",
             "--kind",
             "line",
-            "--fail-on-unsorted-x",
+            "--fail-on-x-unsorted",
         ],
     )
 
@@ -1060,7 +1060,7 @@ def test_plot_folder_respects_custom_file_limit(tmp_path: Path) -> None:
             "y",
             "--kind",
             "line",
-            "--folder-max-files",
+            "-n",
             "7",
         ],
     )
@@ -1082,13 +1082,13 @@ def test_plot_folder_limit_rejects_zero(tmp_path: Path) -> None:
             str(folder),
             "x",
             "y",
-            "--folder-max-files",
+            "-n",
             "0",
         ],
     )
 
     assert result.exit_code == 1
-    assert "--folder-max-files must be greater than or equal to 1." in result.stdout
+    assert "-n must be greater than or equal to 1." in result.stdout
     assert "Traceback" not in result.stdout
 
 

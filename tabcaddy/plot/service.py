@@ -72,7 +72,7 @@ class PlotDataset:
         folder_max_files: int = _DEFAULT_FOLDER_MAX_FILES,
     ) -> PlotRunResult:
         if folder_max_files < 1:
-            raise ValueError("--folder-max-files must be greater than or equal to 1.")
+            raise ValueError("-n must be greater than or equal to 1.")
 
         if source.source_type == SourceType.FOLDER:
             return self._run_for_folder(
@@ -145,7 +145,7 @@ class PlotDataset:
             warnings.append(
                 (
                     f"Folder contains {len(files)} files; plotted first {len(selected_files)}. "
-                    f"Increase --folder-max-files to at least {len(files)} to plot all files."
+                    f"Increase -n to at least {len(files)} to plot all files."
                 )
             )
 
@@ -274,7 +274,7 @@ class PlotDataset:
         if chart_kind == "line" and not sorted_x:
             if fail_on_unsorted_x:
                 raise ValueError(
-                    "x-values are not sorted. Re-run without --fail-on-unsorted-x "
+                    "x-values are not sorted. Re-run without --fail-on-x-unsorted "
                     "to auto-sort, or sort upstream."
                 )
             filtered = filtered.sort("_x")
@@ -406,28 +406,18 @@ class PlotDataset:
         x_values = frame.get_column("_x").to_list()
         y_values = [float(value) for value in frame.get_column("_y").to_list()]
 
-        numeric_x: list[float]
         if self._is_temporal_dtype(x_dtype) or self._is_numeric_dtype(x_dtype):
-            numeric_x = []
-            for value in x_values:
-                converted = self._to_numeric_x(value)
-                if converted is None or not math.isfinite(converted):
-                    continue
-                numeric_x.append(converted)
-            if len(numeric_x) != len(y_values):
-                # Rebuild aligned points while dropping rows that cannot be projected.
-                points = [
-                    (x, y)
-                    for value, y in zip(x_values, y_values, strict=False)
-                    for x in [self._to_numeric_x(value)]
-                    if x is not None and math.isfinite(x) and math.isfinite(y)
-                ]
-                return points, warnings
             points = [
                 (x, y)
-                for x, y in zip(numeric_x, y_values, strict=False)
+                for value, y in zip(x_values, y_values, strict=False)
+                for x in [self._to_numeric_x(value)]
+                if x is not None
                 if math.isfinite(x) and math.isfinite(y)
             ]
+            if len(points) != len(y_values):
+                warnings.append(
+                    "Scatter plot dropped rows with non-plottable numeric/temporal x-values."
+                )
             return points, warnings
 
         mapping: dict[str, float] = {}

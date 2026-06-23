@@ -13,6 +13,17 @@ from tabcaddy.rendering.charts.scatter_chart import render_scatter_chart
 from tabcaddy.rendering.console import RenderProfile, resolve_render_profile
 
 
+def _build_warning_panel(warnings: list[str], *, render: RenderProfile) -> object:
+    warning_text = Text(
+        "\n".join(f"- {warning}" for warning in warnings), style="yellow"
+    )
+    return render.panel(
+        warning_text,
+        title="Warnings",
+        border_style="yellow",
+    )
+
+
 def build_plot_view(
     result: PlotRunResult,
     *,
@@ -43,16 +54,7 @@ def build_plot_view(
         )
 
     if result.warnings:
-        warning_text = Text(
-            "\n".join(f"- {warning}" for warning in result.warnings), style="yellow"
-        )
-        blocks.append(
-            render.panel(
-                warning_text,
-                title="Warnings",
-                border_style="yellow",
-            )
-        )
+        blocks.append(_build_warning_panel(result.warnings, render=render))
 
     return Group(*blocks)
 
@@ -113,14 +115,5 @@ def _build_single_plot_view(
 
     blocks: list[object] = [metadata, chart_panel]
     if result.warnings:
-        warning_text = Text(
-            "\n".join(f"- {warning}" for warning in result.warnings), style="yellow"
-        )
-        blocks.append(
-            render.panel(
-                warning_text,
-                title="Warnings",
-                border_style="yellow",
-            )
-        )
+        blocks.append(_build_warning_panel(result.warnings, render=render))
     return Group(*blocks)
