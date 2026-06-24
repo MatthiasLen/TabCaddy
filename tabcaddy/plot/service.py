@@ -151,24 +151,37 @@ class PlotDataset:
 
         selected_files = files[:folder_max_files]
         file_results: list[PlotFileResult] = []
+        warnings: list[str] = []
+        failed_files = 0
         for path in selected_files:
-            lazyframe = scan_dataframe(path)
-            result = self._run_for_lazyframe(
-                lazyframe,
-                x_column,
-                y_column,
-                kind=kind,
-                aggregate_x=aggregate_x,
-                line_interpolation=line_interpolation,
-                fail_on_x_duplicates=fail_on_x_duplicates,
-                fail_on_unsorted_x=fail_on_unsorted_x,
-                filter_expr=filter_expr,
-            )
+            try:
+                lazyframe = scan_dataframe(path)
+                result = self._run_for_lazyframe(
+                    lazyframe,
+                    x_column,
+                    y_column,
+                    kind=kind,
+                    aggregate_x=aggregate_x,
+                    line_interpolation=line_interpolation,
+                    fail_on_x_duplicates=fail_on_x_duplicates,
+                    fail_on_unsorted_x=fail_on_unsorted_x,
+                    filter_expr=filter_expr,
+                )
+            except (FileNotFoundError, ValueError, pl.exceptions.PolarsError) as error:
+                failed_files += 1
+                warnings.append(f"Skipped {path.name}: {error}")
+                continue
+
             file_results.append(PlotFileResult(path=path, result=result))
 
-        warnings: list[str] = []
-        skipped_files = max(0, len(files) - len(selected_files))
-        if skipped_files > 0:
+        capped_files = max(0, len(files) - len(selected_files))
+        skipped_files = capped_files + failed_files
+        if failed_files > 0:
+            warnings.insert(
+                0,
+                f"Skipped {failed_files} file(s) due to plotting errors.",
+            )
+        if capped_files > 0:
             warnings.append(
                 (
                     f"Folder contains {len(files)} files; plotted first {len(selected_files)}. "
@@ -379,6 +392,17 @@ class PlotDataset:
                 return False
         return "Datetime" in str(dtype)
 
+    def _is_time_dtype(self, dtype: pl.DataType) -> bool:
+        if dtype == pl.Time:
+            return True
+        base_type = getattr(dtype, "base_type", None)
+        if callable(base_type):
+            try:
+                return base_type() == pl.Time
+            except TypeError:
+                return False
+        return "Time" in str(dtype)
+
     def _prepare_plot_frame(
         self,
         lazyframe: pl.LazyFrame,
@@ -449,7 +473,7 @@ class PlotDataset:
 
     def _parse_filter_value(
         self, value: str, *, dtype: pl.DataType
-    ) -> bool | int | float | str | date | datetime:
+    ) -> bool | int | float | str | date | datetime | time:
         stripped = value.strip()
         if (
             len(stripped) >= 2
@@ -471,13 +495,28 @@ class PlotDataset:
                     "(YYYY-MM-DD)."
                 ) from error
 
+        if self._is_time_dtype(dtype):
+            try:
+                parsed_time = time.fromisoformat(stripped)
+            except ValueError as error:
+                raise ValueError(
+                    "Invalid --filter value for Time column. Expected ISO-8601 "
+                    "time (HH:MM[:SS[.ffffff]])."
+                ) from error
+            if parsed_time.tzinfo is not None:
+                raise ValueError(
+                    "Invalid --filter value for Time column. Time literals with "
+                    "timezone offsets are not supported."
+                )
+            return parsed_time
+
         if self._is_datetime_dtype(dtype):
             try:
                 parsed = datetime.fromisoformat(stripped)
             except ValueError as error:
                 raise ValueError(
                     "Invalid --filter value for Datetime column. Expected ISO-8601 "
-                    "datetime (for example 2026-01-01T12:34:56)."
+                    "datetime (for example 2026-01-01T12:34:56 or 2026-01-01)."
                 ) from error
             timezone_name = getattr(dtype, "time_zone", None)
             if timezone_name:

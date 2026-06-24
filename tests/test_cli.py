@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 import json
 from pathlib import Path
 
@@ -1216,6 +1216,67 @@ def test_plot_filter_date_column_supports_iso8601_equality(tmp_path: Path) -> No
     assert "1" in plotted_rows_line
 
 
+def test_plot_filter_time_column_supports_iso8601_gte(tmp_path: Path) -> None:
+    parquet_file = tmp_path / "filtered_time.parquet"
+    pl.DataFrame(
+        {
+            "t": [
+                time(10, 0, 0),
+                time(10, 30, 0),
+                time(11, 0, 0),
+            ],
+            "y": [10.0, 20.0, 30.0],
+        }
+    ).write_parquet(parquet_file)
+
+    result = runner.invoke(
+        app,
+        [
+            "plot",
+            str(parquet_file),
+            "t",
+            "y",
+            "--kind",
+            "line",
+            "--filter",
+            "t>=10:30:00",
+        ],
+    )
+
+    assert result.exit_code == 0
+    plotted_rows_line = next(
+        line for line in result.stdout.splitlines() if "Plotted rows" in line
+    )
+    assert "2" in plotted_rows_line
+
+
+def test_plot_filter_time_column_rejects_invalid_iso8601_literal(
+    tmp_path: Path,
+) -> None:
+    parquet_file = tmp_path / "filtered_time_invalid.parquet"
+    pl.DataFrame(
+        {
+            "t": [time(10, 0, 0)],
+            "y": [10.0],
+        }
+    ).write_parquet(parquet_file)
+
+    result = runner.invoke(
+        app,
+        [
+            "plot",
+            str(parquet_file),
+            "t",
+            "y",
+            "--filter",
+            "t>=25:00:00",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "Invalid --filter value for Time column" in result.stdout
+
+
 def test_plot_filter_datetime_column_rejects_invalid_iso8601_literal(
     tmp_path: Path,
 ) -> None:
@@ -1329,6 +1390,28 @@ def test_plot_folder_renders_stacked_per_file_plots(tmp_path: Path) -> None:
     assert "Folder Plot Summary" in result.stdout
     assert "File 1: a.csv" in result.stdout
     assert "File 2: b.csv" in result.stdout
+
+
+def test_plot_folder_skips_invalid_files_and_continues(tmp_path: Path) -> None:
+    folder = tmp_path / "plots"
+    folder.mkdir()
+    _write_csv(
+        folder / "a_good.csv",
+        [{"x": 1, "y": 10.0}, {"x": 2, "y": 12.0}],
+    )
+    _write_csv(
+        folder / "b_bad.csv",
+        [{"x": 1, "other": 20.0}, {"x": 2, "other": 22.0}],
+    )
+
+    result = runner.invoke(app, ["plot", str(folder), "x", "y", "--kind", "line"])
+
+    assert result.exit_code == 0
+    assert "Folder Plot Summary" in result.stdout
+    assert "File 1: a_good.csv" in result.stdout
+    assert "b_bad.csv" in result.stdout
+    assert "Column not found: y" in result.stdout
+    assert "Traceback" not in result.stdout
 
 
 def test_plot_folder_limits_default_number_of_files(tmp_path: Path) -> None:
