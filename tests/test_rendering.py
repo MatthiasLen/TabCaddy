@@ -314,6 +314,41 @@ def test_plot_view_line_respects_ascii_render_profile() -> None:
     assert "─" not in output
 
 
+def test_plot_view_line_adds_numeric_x_axis_labels() -> None:
+    result = PlotResult(
+        chart_kind="line",
+        x_column="x",
+        y_column="y",
+        x_axis_kind="numeric",
+        x_axis_time_unit=None,
+        x_axis_timezone=None,
+        row_count=3,
+        plotted_rows=3,
+        dropped_rows=0,
+        duplicate_x_count=0,
+        sorted_x=True,
+        auto_sorted=False,
+        aggregated=False,
+        line_interpolation="linear",
+        line_x_values=[10.25, 10.5, 10.75],
+        line_values=[1.0, 2.0, 3.0],
+    )
+    run_result = PlotRunResult(
+        plots=[PlotFileResult(path=Path("plot.csv"), result=result)],
+        total_files=1,
+        plotted_files=1,
+        skipped_files=0,
+    )
+
+    console = create_console(record=True, width=80, legacy_windows=False)
+    console.print(build_plot_view(run_result))
+    output = console.export_text()
+
+    footer = output.splitlines()[-1]
+    assert "10.25" in footer
+    assert "10.75" in footer
+
+
 def test_scatter_chart_formats_temporal_x_labels_as_utc_dates() -> None:
     points = [
         (datetime(2026, 2, 7, tzinfo=timezone.utc).timestamp(), 1.0),

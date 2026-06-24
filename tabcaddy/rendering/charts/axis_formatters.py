@@ -4,6 +4,16 @@ from datetime import UTC, datetime
 import math
 
 
+def format_numeric_axis(value: float) -> str:
+    if not math.isfinite(value):
+        return str(value)
+
+    if math.isclose(value, round(value), rel_tol=1e-9, abs_tol=1e-9):
+        return str(int(round(value)))
+
+    return f"{value:.6g}"
+
+
 def format_epoch_seconds_utc(value: float) -> str:
     if not math.isfinite(value):
         return str(value)
