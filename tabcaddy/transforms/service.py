@@ -60,6 +60,16 @@ class TransformDataset:
             and self._is_file_output_path(output_path)
         )
 
+        if (
+            output_path is not None
+            and source.source_type != SourceType.FILE
+            and self._is_file_output_path(output_path)
+        ):
+            raise ValueError(
+                f"Output path looks like a file and cannot be used with "
+                f"{source.source_type.value} input: {output_path}"
+            )
+
         output_file: Path | None = None
         output_root: Path | None = None
         if write_to_single_file:

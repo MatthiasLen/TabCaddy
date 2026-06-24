@@ -206,6 +206,85 @@ def test_transform_single_file_output_path_like_file_writes_file(
     assert transformed["value"][0] == 10.0
 
 
+def test_transform_folder_rejects_file_like_output_path(tmp_path: Path) -> None:
+    data = tmp_path / "data"
+    data.mkdir()
+    _write_csv(data / "a.csv", [{"id": 1, "value": 10.0}])
+
+    transform_script = tmp_path / "transform.py"
+    transform_script.write_text(
+        "import polars as pl\n\ndef transform(df, context=None):\n    return df\n",
+        encoding="utf-8",
+    )
+
+    output_file_like_path = tmp_path / "output.csv"
+    transform_result = runner.invoke(
+        app,
+        ["transform", str(data), str(transform_script), str(output_file_like_path)],
+    )
+
+    assert transform_result.exit_code == 1
+    assert "Output path looks like a file" in transform_result.stdout
+    assert "folder input" in transform_result.stdout
+    assert "Traceback" not in transform_result.stdout
+    assert not output_file_like_path.exists()
+
+
+def test_transform_compiled_dataset_rejects_file_like_output_path(
+    tmp_path: Path,
+) -> None:
+    compiled_source = tmp_path / "compiled_source"
+    _write_compiled_dataset(
+        compiled_source,
+        pl.DataFrame({"id": [1], "value": [10.0]}),
+    )
+
+    transform_script = tmp_path / "transform.py"
+    transform_script.write_text(
+        "import polars as pl\n\ndef transform(df, context=None):\n    return df\n",
+        encoding="utf-8",
+    )
+
+    output_file_like_path = tmp_path / "output.parquet"
+    transform_result = runner.invoke(
+        app,
+        [
+            "transform",
+            str(compiled_source),
+            str(transform_script),
+            str(output_file_like_path),
+        ],
+    )
+
+    assert transform_result.exit_code == 1
+    assert "Output path looks like a file" in transform_result.stdout
+    assert "compiled_dataset input" in transform_result.stdout
+    assert "Traceback" not in transform_result.stdout
+    assert not output_file_like_path.exists()
+
+
+def test_transform_folder_accepts_directory_output_path(tmp_path: Path) -> None:
+    data = tmp_path / "data"
+    data.mkdir()
+    _write_csv(data / "a.csv", [{"id": 1, "value": 10.0}])
+
+    transform_script = tmp_path / "transform.py"
+    transform_script.write_text(
+        "import polars as pl\n\ndef transform(df, context=None):\n    return df\n",
+        encoding="utf-8",
+    )
+
+    output_dir = tmp_path / "output_dir"
+    transform_result = runner.invoke(
+        app,
+        ["transform", str(data), str(transform_script), str(output_dir)],
+    )
+
+    assert transform_result.exit_code == 0
+    assert output_dir.is_dir()
+    assert (output_dir / "a.csv").is_file()
+
+
 def test_transform_shows_warnings_for_unreadable_files(tmp_path: Path) -> None:
     data = tmp_path / "data"
     data.mkdir()
