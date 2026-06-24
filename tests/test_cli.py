@@ -1179,6 +1179,38 @@ def test_plot_filter_prefilters_rows_for_line_plot(tmp_path: Path) -> None:
     assert "2" in plotted_rows_line
 
 
+def test_plot_filter_accepts_hyphenated_column_names(tmp_path: Path) -> None:
+    csv_file = tmp_path / "filtered_hyphenated_column.csv"
+    _write_csv(
+        csv_file,
+        [
+            {"x": 1, "y": 10.0, "machine-id": "A"},
+            {"x": 2, "y": 20.0, "machine-id": "B"},
+            {"x": 3, "y": 30.0, "machine-id": "B"},
+        ],
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "plot",
+            str(csv_file),
+            "x",
+            "y",
+            "--kind",
+            "line",
+            "--filter",
+            'machine-id=="B"',
+        ],
+    )
+
+    assert result.exit_code == 0
+    plotted_rows_line = next(
+        line for line in result.stdout.splitlines() if "Plotted rows" in line
+    )
+    assert "2" in plotted_rows_line
+
+
 def test_plot_filter_applies_to_multiple_y_columns(tmp_path: Path) -> None:
     csv_file = tmp_path / "filtered_multi_series.csv"
     _write_csv(
@@ -1224,6 +1256,28 @@ def test_plot_filter_rejects_invalid_syntax(tmp_path: Path) -> None:
             "y",
             "--filter",
             "current=>0.5",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "Invalid --filter expression" in result.stdout
+
+
+def test_plot_filter_rejects_invalid_syntax_for_hyphenated_column(
+    tmp_path: Path,
+) -> None:
+    csv_file = tmp_path / "series_hyphenated_column_invalid_syntax.csv"
+    _write_csv(csv_file, [{"x": 1, "y": 10.0, "machine-id": "A"}])
+
+    result = runner.invoke(
+        app,
+        [
+            "plot",
+            str(csv_file),
+            "x",
+            "y",
+            "--filter",
+            'machine-id=>"A"',
         ],
     )
 

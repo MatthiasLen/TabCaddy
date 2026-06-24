@@ -27,7 +27,7 @@ _MAX_OUTLIER_BUCKETS = 24
 _ROBUST_Z_THRESHOLD = 3.5
 _EPSILON = 1e-12
 _FILTER_PATTERN = re.compile(
-    r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*(==|!=|>=|<=|>|<)\s*(.+?)\s*$"
+    r"^\s*([A-Za-z_][A-Za-z0-9_-]*)\s*(==|!=|>=|<=|>|<)\s*(.+?)\s*$"
 )
 _FILTER_OPERATORS = {
     "==": lambda lhs, rhs: lhs == rhs,
