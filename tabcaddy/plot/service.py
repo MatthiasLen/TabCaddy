@@ -343,8 +343,21 @@ class PlotDataset:
     ]:
         x_axis_kind = self._infer_x_axis_kind(x_dtype)
         if x_axis_kind == "temporal":
+            if self._is_duration_dtype(x_dtype):
+                return x_axis_kind, None, None
             return x_axis_kind, "epoch_seconds", "UTC"
         return x_axis_kind, None, None
+
+    def _is_duration_dtype(self, dtype: pl.DataType) -> bool:
+        if dtype == pl.Duration:
+            return True
+        base_type = getattr(dtype, "base_type", None)
+        if callable(base_type):
+            try:
+                return base_type() == pl.Duration
+            except TypeError:
+                return False
+        return "Duration" in str(dtype)
 
     def _prepare_plot_frame(
         self,

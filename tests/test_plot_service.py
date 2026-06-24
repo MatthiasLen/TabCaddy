@@ -61,6 +61,9 @@ def test_duration_x_line_plot_keeps_points() -> None:
     )
 
     assert result.chart_kind == "line"
+    assert result.x_axis_kind == "temporal"
+    assert result.x_axis_time_unit is None
+    assert result.x_axis_timezone is None
     assert result.plotted_rows == 3
     assert result.dropped_rows == 0
     assert result.line_x_values == [1.0, 2.0, 3.0]
@@ -88,6 +91,9 @@ def test_duration_x_scatter_plot_keeps_points() -> None:
     )
 
     assert result.chart_kind == "scatter"
+    assert result.x_axis_kind == "temporal"
+    assert result.x_axis_time_unit is None
+    assert result.x_axis_timezone is None
     assert result.plotted_rows == 3
     assert result.dropped_rows == 0
     assert result.scatter_points == [(1.0, 1.0), (2.0, 2.0), (3.0, 3.0)]

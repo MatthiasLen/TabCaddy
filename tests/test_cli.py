@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 import json
 from pathlib import Path
 
@@ -1044,6 +1044,26 @@ def test_plot_auto_selects_scatter_for_duplicate_temporal_x(tmp_path: Path) -> N
     assert result.exit_code == 0
     assert "scatter" in result.stdout
     assert "temporal x-values contain duplicates" in result.stdout
+
+
+def test_plot_duration_x_does_not_use_epoch_utc_labels(tmp_path: Path) -> None:
+    parquet_file = tmp_path / "duration_plot.parquet"
+    pl.DataFrame(
+        {
+            "elapsed": [timedelta(seconds=1), timedelta(seconds=3)],
+            "y": [10.0, 20.0],
+        }
+    ).write_parquet(parquet_file)
+
+    result = runner.invoke(
+        app,
+        ["plot", str(parquet_file), "elapsed", "y", "--kind", "line"],
+    )
+
+    assert result.exit_code == 0
+    assert "X Time Unit" not in result.stdout
+    assert "X Time Zone" not in result.stdout
+    assert "1970-" not in result.stdout
 
 
 def test_plot_filter_prefilters_rows_for_line_plot(tmp_path: Path) -> None:
