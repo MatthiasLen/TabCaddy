@@ -327,8 +327,8 @@ def _build_single_plot_view(
         chart = render_scatter_chart(
             result.scatter_inlier_points or result.scatter_points,
             outlier_points=result.scatter_outlier_points,
-            point="●",
-            outlier_point="◦",
+            point="." if render.ascii_only else "●",
+            outlier_point="*" if render.ascii_only else "◦",
             y_axis_char="|" if render.ascii_only else "│",
             x_axis_char="-" if render.ascii_only else "─",
             axis_corner_char="+" if render.ascii_only else "└",
