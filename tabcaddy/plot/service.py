@@ -149,6 +149,9 @@ class PlotDataset:
         if not files:
             raise ValueError(f"No supported files found under: {source.path}")
 
+        if filter_expr is not None:
+            self._parse_filter_expression(filter_expr)
+
         selected_files = files[:folder_max_files]
         file_results: list[PlotFileResult] = []
         warnings: list[str] = []
@@ -457,14 +460,7 @@ class PlotDataset:
         return pl.col(y_column).cast(pl.Float64, strict=False)
 
     def _build_filter_predicate(self, expression: str, *, schema: pl.Schema) -> pl.Expr:
-        match = _FILTER_PATTERN.match(expression)
-        if match is None:
-            raise ValueError(
-                "Invalid --filter expression. Expected format: COLUMN OP VALUE "
-                "with OP in ==, !=, >, >=, <, <=."
-            )
-
-        column, operator, raw_value = match.group(1), match.group(2), match.group(3)
+        column, operator, raw_value = self._parse_filter_expression(expression)
         if column not in schema:
             raise ValueError(f"Column not found in --filter: {column}")
         column_dtype = schema[column]
@@ -472,6 +468,15 @@ class PlotDataset:
             pl.col(column),
             self._parse_filter_value(raw_value, dtype=column_dtype),
         )
+
+    def _parse_filter_expression(self, expression: str) -> tuple[str, str, str]:
+        match = _FILTER_PATTERN.match(expression)
+        if match is None:
+            raise ValueError(
+                "Invalid --filter expression. Expected format: COLUMN OP VALUE "
+                "with OP in ==, !=, >, >=, <, <=."
+            )
+        return match.group(1), match.group(2), match.group(3)
 
     def _parse_filter_value(
         self, value: str, *, dtype: pl.DataType

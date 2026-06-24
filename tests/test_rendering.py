@@ -434,6 +434,8 @@ def test_plot_view_scatter_shows_outlier_count() -> None:
 
     assert "Outliers" in outliers_line
     assert "1" in outliers_line
+    assert "●" in output
+    assert "◦" in output
 
 
 def test_scatter_chart_single_x_uses_true_footer_labels() -> None:

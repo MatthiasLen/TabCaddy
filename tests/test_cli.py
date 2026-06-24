@@ -1547,6 +1547,20 @@ def test_plot_folder_skips_invalid_files_and_continues(tmp_path: Path) -> None:
     assert "Traceback" not in result.stdout
 
 
+def test_plot_folder_rejects_invalid_filter_syntax(tmp_path: Path) -> None:
+    folder = tmp_path / "plots"
+    folder.mkdir()
+    _write_csv(folder / "a.csv", [{"x": 1, "y": 10.0}])
+
+    result = runner.invoke(
+        app,
+        ["plot", str(folder), "x", "y", "--filter", "current=>0.5"],
+    )
+
+    assert result.exit_code == 1
+    assert "Invalid --filter expression" in result.stdout
+
+
 def test_plot_folder_limits_default_number_of_files(tmp_path: Path) -> None:
     folder = tmp_path / "many_plots"
     folder.mkdir()
