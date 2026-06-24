@@ -7,6 +7,7 @@ from rich.text import Text
 
 from tabcaddy.plot.service import PlotResult, PlotRunResult
 from tabcaddy.rendering.charts.axis_formatters import format_epoch_seconds_utc
+from tabcaddy.rendering.charts.axis_formatters import format_numeric_axis
 from tabcaddy.rendering.charts.line_chart import get_line_series_ansi_color
 from tabcaddy.rendering.charts.line_chart import get_line_series_rich_style
 from tabcaddy.rendering.charts.line_chart import render_line_chart
@@ -309,6 +310,8 @@ def _build_single_plot_view(
         and result.x_axis_timezone == "UTC"
     ):
         x_tick_formatter = format_epoch_seconds_utc
+    elif result.x_axis_kind == "numeric":
+        x_tick_formatter = format_numeric_axis
 
     if result.chart_kind == "line":
         chart = render_line_chart(
@@ -324,8 +327,8 @@ def _build_single_plot_view(
         chart = render_scatter_chart(
             result.scatter_inlier_points or result.scatter_points,
             outlier_points=result.scatter_outlier_points,
-            point="." if render.ascii_only else "•",
-            outlier_point="*" if render.ascii_only else "·",
+            point="." if render.ascii_only else "●",
+            outlier_point="*" if render.ascii_only else "◦",
             y_axis_char="|" if render.ascii_only else "│",
             x_axis_char="-" if render.ascii_only else "─",
             axis_corner_char="+" if render.ascii_only else "└",

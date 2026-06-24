@@ -206,6 +206,85 @@ def test_transform_single_file_output_path_like_file_writes_file(
     assert transformed["value"][0] == 10.0
 
 
+def test_transform_folder_rejects_file_like_output_path(tmp_path: Path) -> None:
+    data = tmp_path / "data"
+    data.mkdir()
+    _write_csv(data / "a.csv", [{"id": 1, "value": 10.0}])
+
+    transform_script = tmp_path / "transform.py"
+    transform_script.write_text(
+        "import polars as pl\n\ndef transform(df, context=None):\n    return df\n",
+        encoding="utf-8",
+    )
+
+    output_file_like_path = tmp_path / "output.csv"
+    transform_result = runner.invoke(
+        app,
+        ["transform", str(data), str(transform_script), str(output_file_like_path)],
+    )
+
+    assert transform_result.exit_code == 1
+    assert "Output path looks like a file" in transform_result.stdout
+    assert "folder input" in transform_result.stdout
+    assert "Traceback" not in transform_result.stdout
+    assert not output_file_like_path.exists()
+
+
+def test_transform_compiled_dataset_rejects_file_like_output_path(
+    tmp_path: Path,
+) -> None:
+    compiled_source = tmp_path / "compiled_source"
+    _write_compiled_dataset(
+        compiled_source,
+        pl.DataFrame({"id": [1], "value": [10.0]}),
+    )
+
+    transform_script = tmp_path / "transform.py"
+    transform_script.write_text(
+        "import polars as pl\n\ndef transform(df, context=None):\n    return df\n",
+        encoding="utf-8",
+    )
+
+    output_file_like_path = tmp_path / "output.parquet"
+    transform_result = runner.invoke(
+        app,
+        [
+            "transform",
+            str(compiled_source),
+            str(transform_script),
+            str(output_file_like_path),
+        ],
+    )
+
+    assert transform_result.exit_code == 1
+    assert "Output path looks like a file" in transform_result.stdout
+    assert "compiled_dataset input" in transform_result.stdout
+    assert "Traceback" not in transform_result.stdout
+    assert not output_file_like_path.exists()
+
+
+def test_transform_folder_accepts_directory_output_path(tmp_path: Path) -> None:
+    data = tmp_path / "data"
+    data.mkdir()
+    _write_csv(data / "a.csv", [{"id": 1, "value": 10.0}])
+
+    transform_script = tmp_path / "transform.py"
+    transform_script.write_text(
+        "import polars as pl\n\ndef transform(df, context=None):\n    return df\n",
+        encoding="utf-8",
+    )
+
+    output_dir = tmp_path / "output_dir"
+    transform_result = runner.invoke(
+        app,
+        ["transform", str(data), str(transform_script), str(output_dir)],
+    )
+
+    assert transform_result.exit_code == 0
+    assert output_dir.is_dir()
+    assert (output_dir / "a.csv").is_file()
+
+
 def test_transform_shows_warnings_for_unreadable_files(tmp_path: Path) -> None:
     data = tmp_path / "data"
     data.mkdir()
@@ -1100,6 +1179,38 @@ def test_plot_filter_prefilters_rows_for_line_plot(tmp_path: Path) -> None:
     assert "2" in plotted_rows_line
 
 
+def test_plot_filter_accepts_hyphenated_column_names(tmp_path: Path) -> None:
+    csv_file = tmp_path / "filtered_hyphenated_column.csv"
+    _write_csv(
+        csv_file,
+        [
+            {"x": 1, "y": 10.0, "machine-id": "A"},
+            {"x": 2, "y": 20.0, "machine-id": "B"},
+            {"x": 3, "y": 30.0, "machine-id": "B"},
+        ],
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "plot",
+            str(csv_file),
+            "x",
+            "y",
+            "--kind",
+            "line",
+            "--filter",
+            'machine-id=="B"',
+        ],
+    )
+
+    assert result.exit_code == 0
+    plotted_rows_line = next(
+        line for line in result.stdout.splitlines() if "Plotted rows" in line
+    )
+    assert "2" in plotted_rows_line
+
+
 def test_plot_filter_applies_to_multiple_y_columns(tmp_path: Path) -> None:
     csv_file = tmp_path / "filtered_multi_series.csv"
     _write_csv(
@@ -1145,6 +1256,28 @@ def test_plot_filter_rejects_invalid_syntax(tmp_path: Path) -> None:
             "y",
             "--filter",
             "current=>0.5",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "Invalid --filter expression" in result.stdout
+
+
+def test_plot_filter_rejects_invalid_syntax_for_hyphenated_column(
+    tmp_path: Path,
+) -> None:
+    csv_file = tmp_path / "series_hyphenated_column_invalid_syntax.csv"
+    _write_csv(csv_file, [{"x": 1, "y": 10.0, "machine-id": "A"}])
+
+    result = runner.invoke(
+        app,
+        [
+            "plot",
+            str(csv_file),
+            "x",
+            "y",
+            "--filter",
+            'machine-id=>"A"',
         ],
     )
 
@@ -1412,6 +1545,20 @@ def test_plot_folder_skips_invalid_files_and_continues(tmp_path: Path) -> None:
     assert "b_bad.csv" in result.stdout
     assert "Column not found: y" in result.stdout
     assert "Traceback" not in result.stdout
+
+
+def test_plot_folder_rejects_invalid_filter_syntax(tmp_path: Path) -> None:
+    folder = tmp_path / "plots"
+    folder.mkdir()
+    _write_csv(folder / "a.csv", [{"x": 1, "y": 10.0}])
+
+    result = runner.invoke(
+        app,
+        ["plot", str(folder), "x", "y", "--filter", "current=>0.5"],
+    )
+
+    assert result.exit_code == 1
+    assert "Invalid --filter expression" in result.stdout
 
 
 def test_plot_folder_limits_default_number_of_files(tmp_path: Path) -> None:
