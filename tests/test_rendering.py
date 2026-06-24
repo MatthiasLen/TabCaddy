@@ -421,25 +421,25 @@ def test_scatter_chart_single_y_uses_true_axis_labels() -> None:
 
 
 def test_plot_chart_width_uses_full_width_for_narrow_console() -> None:
-    width = _resolve_chart_width(console_width=80, point_count=500)
+    width = _resolve_chart_width(console_width=80)
 
     assert width == 80
 
 
 def test_plot_chart_width_scales_for_sparse_data_on_wide_console() -> None:
-    width = _resolve_chart_width(console_width=140, point_count=5)
+    width = _resolve_chart_width(console_width=140)
 
     assert width == 132
 
 
 def test_plot_chart_width_scales_for_dense_data_on_wide_console() -> None:
-    width = _resolve_chart_width(console_width=140, point_count=500)
+    width = _resolve_chart_width(console_width=140)
 
     assert width == 132
 
 
 def test_plot_chart_width_applies_generous_cap_for_extremely_wide_console() -> None:
-    width = _resolve_chart_width(console_width=1000, point_count=500)
+    width = _resolve_chart_width(console_width=1000)
 
     assert width == 480
 

@@ -20,15 +20,14 @@ _MAX_AUTO_CHART_WIDTH = 480
 _CHART_AXIS_OVERHEAD = 11
 
 
-def _resolve_chart_width(*, console_width: int | None, point_count: int) -> int:
+def _resolve_chart_width(*, console_width: int | None) -> int:
     if console_width is None:
         return _WIDTH_BREAKPOINT
 
     console_width = max(2, console_width)
     if console_width <= _WIDTH_BREAKPOINT:
         return console_width
-    # Keep signature stable for existing call sites and tests.
-    _ = point_count
+
     scaled_width = _WIDTH_BREAKPOINT + int(
         (console_width - _WIDTH_BREAKPOINT) * _WIDE_SCALING_FACTOR
     )
@@ -187,8 +186,8 @@ def _build_multi_y_plot_metadata_table(
         metadata.add_row(
             label,
             *[
-                _series_cell_value(plot_result, selector, summarizer=summarizer)
-                for _, plot_result in results_by_y
+                _series_cell_value(plot_run_result, selector, summarizer=summarizer)
+                for _, plot_run_result in results_by_y
             ],
         )
 
@@ -300,7 +299,6 @@ def _build_single_plot_view(
 
     target_width = _resolve_chart_width(
         console_width=render.console_width,
-        point_count=result.plotted_rows,
     )
     chart_width = max(2, target_width - _CHART_AXIS_OVERHEAD)
 

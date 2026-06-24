@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+import itertools
 import math
 from typing import Callable
 
@@ -35,7 +36,7 @@ def render_scatter_chart(
 
     finite_points = [
         (x, y)
-        for x, y in [*points, *outlier_points]
+        for x, y in itertools.chain(points, outlier_points)
         if math.isfinite(x) and math.isfinite(y)
     ]
     if not finite_points:
