@@ -315,6 +315,7 @@ def _build_single_plot_view(
             interpolation=result.line_interpolation or "linear",
             x_tick_formatter=x_tick_formatter,
             color=line_color_ansi,
+            ascii_only=render.ascii_only,
             width=chart_width,
         )
     else:

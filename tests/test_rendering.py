@@ -27,6 +27,7 @@ from tabcaddy.plot.service import PlotFileResult
 from tabcaddy.plot.service import PlotResult
 from tabcaddy.plot.service import PlotRunResult
 from tabcaddy.rendering.views.diff import build_diff_view
+from tabcaddy.rendering.views.plot import build_plot_view
 from tabcaddy.rendering.views.plot import build_multi_y_plot_view
 from tabcaddy.rendering.views.plot import _resolve_chart_width
 from tabcaddy.rendering.views.schema import build_schema_view
@@ -266,6 +267,51 @@ def test_line_chart_adds_utc_footer_for_temporal_x() -> None:
 
     assert "2026-02-07" in chart
     assert "2026-02-09" in chart
+
+
+def test_line_chart_supports_ascii_symbols() -> None:
+    chart = render_line_chart([1.0, 2.0, 1.0], ascii_only=True, width=20)
+
+    chart.encode("cp1252")
+    assert "┤" not in chart
+    assert "┼" not in chart
+    assert "─" not in chart
+
+
+def test_plot_view_line_respects_ascii_render_profile() -> None:
+    result = PlotResult(
+        chart_kind="line",
+        x_column="x",
+        y_column="y",
+        x_axis_kind="numeric",
+        x_axis_time_unit=None,
+        x_axis_timezone=None,
+        row_count=3,
+        plotted_rows=3,
+        dropped_rows=0,
+        duplicate_x_count=0,
+        sorted_x=True,
+        auto_sorted=False,
+        aggregated=False,
+        line_interpolation="linear",
+        line_x_values=[1.0, 2.0, 3.0],
+        line_values=[1.0, 2.0, 1.5],
+    )
+    run_result = PlotRunResult(
+        plots=[PlotFileResult(path=Path("plot.csv"), result=result)],
+        total_files=1,
+        plotted_files=1,
+        skipped_files=0,
+    )
+
+    console = create_console(record=True, width=80, legacy_windows=False)
+    console.print(build_plot_view(run_result, render=RenderProfile(ascii_only=True)))
+    output = console.export_text()
+
+    output.encode("cp1252")
+    assert "┤" not in output
+    assert "┼" not in output
+    assert "─" not in output
 
 
 def test_scatter_chart_formats_temporal_x_labels_as_utc_dates() -> None:

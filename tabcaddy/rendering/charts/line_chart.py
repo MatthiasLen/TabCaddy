@@ -23,6 +23,10 @@ LINE_SERIES_ANSI_COLORS = [
 ]
 LINE_SERIES_RICH_STYLES = ["cyan", "magenta", "green", "yellow", "blue", "red"]
 
+_ASCII_CHART_SYMBOLS = ["+", ":", ".", ".", "-", "\\", "/", "\\", "/", "|"]
+_UNICODE_AXIS_MARKERS = {"┤", "┼"}
+_ASCII_AXIS_MARKERS = {"|", "+"}
+
 
 def get_line_series_ansi_color(index: int) -> str:
     return LINE_SERIES_ANSI_COLORS[index % len(LINE_SERIES_ANSI_COLORS)]
@@ -76,6 +80,7 @@ def render_line_chart(
     interpolation: Literal["linear", "nearest"] = "linear",
     x_tick_formatter: Callable[[float], str] | None = None,
     color: str | None = None,
+    ascii_only: bool = False,
     height: int = 10,
     width: int = 60,
 ) -> str:
@@ -97,6 +102,8 @@ def render_line_chart(
     config: dict[str, object] = {"height": height}
     if color is not None:
         config["colors"] = [color]
+    if ascii_only:
+        config["symbols"] = _ASCII_CHART_SYMBOLS
     chart = asciichartpy.plot(series, config)
 
     if (
@@ -120,8 +127,9 @@ def render_line_chart(
 
     plain_lines = [_strip_ansi(line) for line in lines]
 
+    axis_markers = _ASCII_AXIS_MARKERS if ascii_only else _UNICODE_AXIS_MARKERS
     axis_index = next(
-        (index for index, ch in enumerate(plain_lines[0]) if ch in {"┤", "┼"}),
+        (index for index, ch in enumerate(plain_lines[0]) if ch in axis_markers),
         None,
     )
     if axis_index is None:
@@ -131,6 +139,10 @@ def render_line_chart(
     plot_width = max(0, max(len(line) - plot_start for line in plain_lines))
     gap = max(1, plot_width - len(left_label) - len(right_label))
     footer = " " * plot_start + left_label + (" " * gap) + right_label
-    footer_line = " " * (plot_start - 1) + "└" + "─" * (len(footer) - plot_start)
+    footer_corner = "+" if ascii_only else "└"
+    footer_bar = "-" if ascii_only else "─"
+    footer_line = (
+        " " * (plot_start - 1) + footer_corner + footer_bar * (len(footer) - plot_start)
+    )
 
     return "\n".join([chart, footer_line, footer])
