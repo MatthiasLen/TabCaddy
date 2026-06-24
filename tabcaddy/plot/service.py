@@ -368,6 +368,17 @@ class PlotDataset:
                 return False
         return "Duration" in str(dtype)
 
+    def _is_datetime_dtype(self, dtype: pl.DataType) -> bool:
+        if dtype == pl.Datetime:
+            return True
+        base_type = getattr(dtype, "base_type", None)
+        if callable(base_type):
+            try:
+                return base_type() == pl.Datetime
+            except TypeError:
+                return False
+        return "Datetime" in str(dtype)
+
     def _prepare_plot_frame(
         self,
         lazyframe: pl.LazyFrame,
@@ -460,7 +471,7 @@ class PlotDataset:
                     "(YYYY-MM-DD)."
                 ) from error
 
-        if dtype == pl.Datetime or dtype.base_type() == pl.Datetime:
+        if self._is_datetime_dtype(dtype):
             try:
                 parsed = datetime.fromisoformat(stripped)
             except ValueError as error:

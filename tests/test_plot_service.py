@@ -126,3 +126,17 @@ def test_scatter_plot_classifies_local_outlier() -> None:
     assert len(result.scatter_inlier_points) + len(
         result.scatter_outlier_points
     ) == len(result.scatter_points)
+
+
+def test_parse_filter_value_non_datetime_dtype_ignores_non_callable_base_type() -> None:
+    class FakeDType:
+        base_type = "not-callable"
+
+        def __str__(self) -> str:
+            return "FakeNumeric"
+
+    dataset = PlotDataset()
+
+    parsed = dataset._parse_filter_value("42", dtype=FakeDType())  # type: ignore[arg-type]
+
+    assert parsed == 42

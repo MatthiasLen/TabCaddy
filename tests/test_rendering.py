@@ -395,8 +395,10 @@ def test_plot_view_scatter_shows_outlier_count() -> None:
     console.print(build_plot_view(run_result, render=RenderProfile(ascii_only=True)))
     output = console.export_text()
 
-    assert "Outliers" in output
-    assert "1" in output
+    outliers_line = next(line for line in output.splitlines() if "Outliers" in line)
+
+    assert "Outliers" in outliers_line
+    assert "1" in outliers_line
 
 
 def test_scatter_chart_single_x_uses_true_footer_labels() -> None:
@@ -424,7 +426,7 @@ def test_plot_chart_width_uses_full_width_for_narrow_console() -> None:
     assert width == 80
 
 
-def test_plot_chart_width_caps_sparse_data_on_wide_console() -> None:
+def test_plot_chart_width_scales_for_sparse_data_on_wide_console() -> None:
     width = _resolve_chart_width(console_width=140, point_count=5)
 
     assert width == 132
