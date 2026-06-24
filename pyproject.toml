@@ -1,7 +1,7 @@
 [project]
 name = "tabcaddy"
-version = "0.1.9"
-description = "Dataset-centric CLI toolkit for exploring, compiling, transforming, and diffing tabular data"
+version = "0.2.0"
+description = "Dataset-centric CLI toolkit for exploring, transforming, compiling, merging, and diffing tabular data"
 readme = "README.md"
 requires-python = ">=3.11"
 
@@ -22,7 +22,6 @@ dependencies = [
     "tqdm>=4.67.1",
     "tzdata>=2025.2",
     "typer>=0.26.7",
-    "benchcaddy>=0.1.13",
     "scipy>=1.17.1",
 ]
 
@@ -37,4 +36,5 @@ build-backend = "hatchling.build"
 dev = [
     "pre-commit>=4.2.0",
     "pytest>=9.0.3",
+    "benchcaddy>=0.1.13",
 ]

@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/MatthiasLen/TabCaddy/actions/workflows/ci.yml/badge.svg)](https://github.com/MatthiasLen/TabCaddy/actions/workflows/ci.yml)
 
-TabCaddy is a dataset-centric CLI for tabular data engineering workflows. It helps you move from raw files to reproducible dataset operations without leaving the terminal.
+TabCaddy is a dataset-centric CLI for tabular data engineering workflows. It helps you move from raw files to reproducible dataset operations in the terminal.
 
 Use it to:
 
@@ -89,7 +89,7 @@ Compile before transforming when you want to lock onto a single schema first, or
 
 ### Transform Workflow Example
 
-If you are using `scaffold-transform` and `transform` for the first time, the usual loop is:
+If you are using `scaffold-transform` and `transform` for the first time, use this loop:
 
 1. generate a starter script from the source you want to clean
 2. replace the scaffold examples with your Polars logic
@@ -173,12 +173,12 @@ Use `--showmeta` to include metadata columns in output.
 tabcaddy schema <source>
 ```
 
-Focused schema analysis for schema groups, type changes, and non-dominant files. It always uses quick schema analysis and does not take `--profile`.
+Focused schema analysis for groups, type changes, and non-dominant files. It always runs quick schema analysis.
 
 `plot`
 
 ```bash
-tabcaddy plot <source> <column_x> <column_y> [<column_y> ...] [--kind auto|line|scatter] [--aggregate-x mean|median|min|max|sum|count] [--interpolation linear|nearest] [--fail-on-x-duplicates] [--fail-on-x-unsorted] [--filter "COLUMN OP VALUE"]
+tabcaddy plot <source> <column_x> <column_y> [<column_y> ...] [--kind auto|line|scatter] [--aggregate-x mean|median|min|max|sum|count] [--interpolation linear|nearest] [--fail-on-x-duplicates] [--fail-on-x-unsorted] [--n N] [--filter "COLUMN OP VALUE"]
 ```
 
 Plots one or more y-columns against the same x-column in the terminal.
@@ -188,9 +188,10 @@ Plots one or more y-columns against the same x-column in the terminal.
 - `--kind auto` picks `line` for temporal `x` only when x-values are unique; if temporal duplicates exist it picks `scatter`; for numeric `x`, it picks `line` only when values are monotonic and unique; otherwise it picks `scatter`
 - `--filter` takes a single expression argument, for example `--filter "event_date >= 2026-01-01"`; `OP` must be one of `==`, `!=`, `>`, `>=`, `<`, `<=`
 - for temporal columns, use ISO-8601 literals: `Date` uses `YYYY-MM-DD`; `Datetime` uses `YYYY-MM-DDTHH:MM:SS` (timezone accepted when present)
-- `--interpolation` controls line chart x-resampling; defaults to `linear` and also supports `nearest`
+- `--interpolation` controls line rendering interpolation; defaults to `linear` and also supports `nearest`
 - line plots fail on duplicate `x` by default unless `--aggregate-x` is provided
 - line plots auto-sort `x` by default; use `--fail-on-x-unsorted` for strict mode
+- for folder input, `--n` limits plotting to the first `N` files (default `5`)
 - multiple y-columns render as stacked plots
 - rows with null values or non-numeric `y` values are dropped and reported as warnings
 
@@ -325,7 +326,7 @@ File type behavior:
 
 Output and safety:
 
-- file-to-file merge requires `--out` to point to a file
+- file-to-file merge supports `--out <file>` or `--inplace`
 - folder-to-folder merge requires `--out` directory or `--inplace`
 - non-inplace folder merge carries unmatched target files into output unchanged
 - non-inplace merge does not overwrite existing output files
