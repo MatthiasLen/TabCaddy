@@ -23,7 +23,12 @@ from tabcaddy.rendering.console import RenderProfile
 from tabcaddy.rendering.charts.line_chart import _resample_by_x
 from tabcaddy.rendering.charts.line_chart import render_line_chart
 from tabcaddy.rendering.charts.scatter_chart import render_scatter_chart
+from tabcaddy.plot.service import PlotFileResult
+from tabcaddy.plot.service import PlotResult
+from tabcaddy.plot.service import PlotRunResult
 from tabcaddy.rendering.views.diff import build_diff_view
+from tabcaddy.rendering.views.plot import build_plot_view
+from tabcaddy.rendering.views.plot import build_multi_y_plot_view
 from tabcaddy.rendering.views.plot import _resolve_chart_width
 from tabcaddy.rendering.views.schema import build_schema_view
 from tabcaddy.rendering.views.summary import build_summary_view
@@ -264,6 +269,51 @@ def test_line_chart_adds_utc_footer_for_temporal_x() -> None:
     assert "2026-02-09" in chart
 
 
+def test_line_chart_supports_ascii_symbols() -> None:
+    chart = render_line_chart([1.0, 2.0, 1.0], ascii_only=True, width=20)
+
+    chart.encode("cp1252")
+    assert "┤" not in chart
+    assert "┼" not in chart
+    assert "─" not in chart
+
+
+def test_plot_view_line_respects_ascii_render_profile() -> None:
+    result = PlotResult(
+        chart_kind="line",
+        x_column="x",
+        y_column="y",
+        x_axis_kind="numeric",
+        x_axis_time_unit=None,
+        x_axis_timezone=None,
+        row_count=3,
+        plotted_rows=3,
+        dropped_rows=0,
+        duplicate_x_count=0,
+        sorted_x=True,
+        auto_sorted=False,
+        aggregated=False,
+        line_interpolation="linear",
+        line_x_values=[1.0, 2.0, 3.0],
+        line_values=[1.0, 2.0, 1.5],
+    )
+    run_result = PlotRunResult(
+        plots=[PlotFileResult(path=Path("plot.csv"), result=result)],
+        total_files=1,
+        plotted_files=1,
+        skipped_files=0,
+    )
+
+    console = create_console(record=True, width=80, legacy_windows=False)
+    console.print(build_plot_view(run_result, render=RenderProfile(ascii_only=True)))
+    output = console.export_text()
+
+    output.encode("cp1252")
+    assert "┤" not in output
+    assert "┼" not in output
+    assert "─" not in output
+
+
 def test_scatter_chart_formats_temporal_x_labels_as_utc_dates() -> None:
     points = [
         (datetime(2026, 2, 7, tzinfo=timezone.utc).timestamp(), 1.0),
@@ -301,19 +351,164 @@ def test_scatter_chart_supports_ascii_axis_chars() -> None:
     assert "-" in chart
 
 
+def test_scatter_chart_renders_outlier_overlay_marker() -> None:
+    chart = render_scatter_chart(
+        [(0.0, 0.0)],
+        outlier_points=[(0.0, 0.0)],
+        point=".",
+        outlier_point="X",
+        width=8,
+        height=4,
+    )
+
+    assert "X" in chart
+
+
+def test_plot_view_scatter_shows_outlier_count() -> None:
+    result = PlotResult(
+        chart_kind="scatter",
+        x_column="x",
+        y_column="y",
+        x_axis_kind="numeric",
+        x_axis_time_unit=None,
+        x_axis_timezone=None,
+        row_count=3,
+        plotted_rows=3,
+        dropped_rows=0,
+        duplicate_x_count=0,
+        sorted_x=True,
+        auto_sorted=False,
+        aggregated=False,
+        line_interpolation=None,
+        scatter_points=[(0.0, 1.0), (1.0, 1.0), (2.0, 10.0)],
+        scatter_inlier_points=[(0.0, 1.0), (1.0, 1.0)],
+        scatter_outlier_points=[(2.0, 10.0)],
+    )
+    run_result = PlotRunResult(
+        plots=[PlotFileResult(path=Path("plot.csv"), result=result)],
+        total_files=1,
+        plotted_files=1,
+        skipped_files=0,
+    )
+
+    console = create_console(record=True, width=100, legacy_windows=False)
+    console.print(build_plot_view(run_result, render=RenderProfile(ascii_only=True)))
+    output = console.export_text()
+
+    outliers_line = next(line for line in output.splitlines() if "Outliers" in line)
+
+    assert "Outliers" in outliers_line
+    assert "1" in outliers_line
+
+
+def test_scatter_chart_single_x_uses_true_footer_labels() -> None:
+    chart = render_scatter_chart([(10.0, 5.0)], width=20, height=6)
+
+    footer = chart.splitlines()[-1]
+    assert "10" in footer
+    assert "9.5" not in footer
+    assert "10.5" not in footer
+
+
+def test_scatter_chart_single_y_uses_true_axis_labels() -> None:
+    chart = render_scatter_chart([(10.0, 5.0)], width=20, height=6)
+
+    y_axis_lines = chart.splitlines()[:-2]
+    assert y_axis_lines
+    assert all(line.startswith("     5 ") for line in y_axis_lines)
+    assert "5.5" not in chart
+    assert "4.5" not in chart
+
+
 def test_plot_chart_width_uses_full_width_for_narrow_console() -> None:
-    width = _resolve_chart_width(console_width=80, point_count=500)
+    width = _resolve_chart_width(console_width=80)
 
     assert width == 80
 
 
-def test_plot_chart_width_caps_sparse_data_on_wide_console() -> None:
-    width = _resolve_chart_width(console_width=140, point_count=5)
+def test_plot_chart_width_scales_for_sparse_data_on_wide_console() -> None:
+    width = _resolve_chart_width(console_width=140)
 
-    assert width == 60
+    assert width == 132
 
 
 def test_plot_chart_width_scales_for_dense_data_on_wide_console() -> None:
-    width = _resolve_chart_width(console_width=140, point_count=500)
+    width = _resolve_chart_width(console_width=140)
 
-    assert width == 116
+    assert width == 132
+
+
+def test_plot_chart_width_applies_generous_cap_for_extremely_wide_console() -> None:
+    width = _resolve_chart_width(console_width=1000)
+
+    assert width == 480
+
+
+def test_multi_y_plot_metadata_uses_per_series_values() -> None:
+    result_a = PlotResult(
+        chart_kind="line",
+        x_column="x",
+        y_column="y_a",
+        x_axis_kind="numeric",
+        x_axis_time_unit=None,
+        x_axis_timezone=None,
+        row_count=5,
+        plotted_rows=4,
+        dropped_rows=1,
+        duplicate_x_count=0,
+        sorted_x=True,
+        auto_sorted=False,
+        aggregated=False,
+        line_interpolation="nearest",
+        line_x_values=[1.0, 2.0, 3.0, 4.0],
+        line_values=[10.0, 11.0, 12.0, 13.0],
+    )
+    result_b = PlotResult(
+        chart_kind="line",
+        x_column="x",
+        y_column="y_b",
+        x_axis_kind="numeric",
+        x_axis_time_unit=None,
+        x_axis_timezone=None,
+        row_count=5,
+        plotted_rows=2,
+        dropped_rows=3,
+        duplicate_x_count=0,
+        sorted_x=True,
+        auto_sorted=False,
+        aggregated=False,
+        line_interpolation="nearest",
+        line_x_values=[1.0, 4.0],
+        line_values=[100.0, 130.0],
+    )
+    run_a = PlotRunResult(
+        plots=[PlotFileResult(path=Path("a.csv"), result=result_a)],
+        total_files=1,
+        plotted_files=1,
+        skipped_files=0,
+    )
+    run_b = PlotRunResult(
+        plots=[PlotFileResult(path=Path("a.csv"), result=result_b)],
+        total_files=1,
+        plotted_files=1,
+        skipped_files=0,
+    )
+
+    console = create_console(record=True, width=120, legacy_windows=False)
+    console.print(build_multi_y_plot_view([("y_a", run_a), ("y_b", run_b)]))
+    output = console.export_text()
+
+    plotted_rows_line = next(
+        line for line in output.splitlines() if "Plotted rows" in line
+    )
+    dropped_rows_line = next(
+        line for line in output.splitlines() if "Dropped rows" in line
+    )
+
+    assert output.count("Plotted rows") == 1
+    assert "y_a" in output
+    assert "y_b" in output
+    assert "4" in plotted_rows_line
+    assert "2" in plotted_rows_line
+    assert "1" in dropped_rows_line
+    assert "3" in dropped_rows_line

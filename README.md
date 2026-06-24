@@ -178,14 +178,16 @@ Focused schema analysis for schema groups, type changes, and non-dominant files.
 `plot`
 
 ```bash
-tabcaddy plot <source> <column_x> <column_y> [<column_y> ...] [--kind auto|line|scatter] [--aggregate-x mean|median|min|max|sum|count] [--interpolation linear|nearest] [--fail-on-x-duplicates] [--fail-on-x-unsorted]
+tabcaddy plot <source> <column_x> <column_y> [<column_y> ...] [--kind auto|line|scatter] [--aggregate-x mean|median|min|max|sum|count] [--interpolation linear|nearest] [--fail-on-x-duplicates] [--fail-on-x-unsorted] [--filter "COLUMN OP VALUE"]
 ```
 
 Plots one or more y-columns against the same x-column in the terminal.
 
 - `column_x`: numeric (`Int`, `Float`, `Decimal`) or temporal (`Date`, `Datetime`, `Time`, `Duration`); categorical/string x is accepted for scatter only
 - `column_y`: one or more y-columns; each must be numeric, boolean (`true=1`, `false=0`), or castable to `Float64`; strings and nested types are not supported
-- `--kind auto` picks `line` for temporal `x` and for numeric `x` only when values are monotonic and unique; otherwise it picks `scatter`
+- `--kind auto` picks `line` for temporal `x` only when x-values are unique; if temporal duplicates exist it picks `scatter`; for numeric `x`, it picks `line` only when values are monotonic and unique; otherwise it picks `scatter`
+- `--filter` takes a single expression argument, for example `--filter "event_date >= 2026-01-01"`; `OP` must be one of `==`, `!=`, `>`, `>=`, `<`, `<=`
+- for temporal columns, use ISO-8601 literals: `Date` uses `YYYY-MM-DD`; `Datetime` uses `YYYY-MM-DDTHH:MM:SS` (timezone accepted when present)
 - `--interpolation` controls line chart x-resampling; defaults to `linear` and also supports `nearest`
 - line plots fail on duplicate `x` by default unless `--aggregate-x` is provided
 - line plots auto-sort `x` by default; use `--fail-on-x-unsorted` for strict mode

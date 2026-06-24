@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date, datetime, time
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 import math
 from pathlib import Path
 import re
 from typing import Any, Literal
+from zoneinfo import ZoneInfo
 
+import numpy as np
 import polars as pl
+from scipy import stats
 
 from tabcaddy.analysis.sources import iter_dataset_files
 from tabcaddy.domain.models import DatasetSource, SourceType
@@ -18,6 +21,11 @@ from tabcaddy.shared.dataset_io import scan_dataframe, scan_parquet_dataset
 _SUPPORTED_AGGREGATIONS = {"mean", "median", "min", "max", "sum", "count"}
 _NAIVE_UNIX_EPOCH = datetime(1970, 1, 1)
 _DEFAULT_FOLDER_MAX_FILES = 5
+_MIN_OUTLIER_POINTS = 8
+_MIN_BUCKET_POINTS = 6
+_MAX_OUTLIER_BUCKETS = 24
+_ROBUST_Z_THRESHOLD = 3.5
+_EPSILON = 1e-12
 _FILTER_PATTERN = re.compile(
     r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*(==|!=|>=|<=|>|<)\s*(.+?)\s*$"
 )
@@ -50,6 +58,8 @@ class PlotResult:
     line_x_values: list[float] = field(default_factory=list)
     line_values: list[float] = field(default_factory=list)
     scatter_points: list[tuple[float, float]] = field(default_factory=list)
+    scatter_inlier_points: list[tuple[float, float]] = field(default_factory=list)
+    scatter_outlier_points: list[tuple[float, float]] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
 
 
@@ -293,6 +303,8 @@ class PlotDataset:
         if kind in {"line", "scatter"}:
             return kind
         if self._is_temporal_dtype(x_dtype):
+            if duplicate_x_count > 0:
+                return "scatter"
             return "line"
         if self._is_numeric_dtype(x_dtype):
             if duplicate_x_count > 0:
@@ -340,8 +352,32 @@ class PlotDataset:
     ]:
         x_axis_kind = self._infer_x_axis_kind(x_dtype)
         if x_axis_kind == "temporal":
+            if self._is_duration_dtype(x_dtype):
+                return x_axis_kind, None, None
             return x_axis_kind, "epoch_seconds", "UTC"
         return x_axis_kind, None, None
+
+    def _is_duration_dtype(self, dtype: pl.DataType) -> bool:
+        if dtype == pl.Duration:
+            return True
+        base_type = getattr(dtype, "base_type", None)
+        if callable(base_type):
+            try:
+                return base_type() == pl.Duration
+            except TypeError:
+                return False
+        return "Duration" in str(dtype)
+
+    def _is_datetime_dtype(self, dtype: pl.DataType) -> bool:
+        if dtype == pl.Datetime:
+            return True
+        base_type = getattr(dtype, "base_type", None)
+        if callable(base_type):
+            try:
+                return base_type() == pl.Datetime
+            except TypeError:
+                return False
+        return "Datetime" in str(dtype)
 
     def _prepare_plot_frame(
         self,
@@ -405,12 +441,15 @@ class PlotDataset:
         column, operator, raw_value = match.group(1), match.group(2), match.group(3)
         if column not in schema:
             raise ValueError(f"Column not found in --filter: {column}")
+        column_dtype = schema[column]
         return _FILTER_OPERATORS[operator](
             pl.col(column),
-            self._parse_filter_value(raw_value),
+            self._parse_filter_value(raw_value, dtype=column_dtype),
         )
 
-    def _parse_filter_value(self, value: str) -> bool | int | float | str:
+    def _parse_filter_value(
+        self, value: str, *, dtype: pl.DataType
+    ) -> bool | int | float | str | date | datetime:
         stripped = value.strip()
         if (
             len(stripped) >= 2
@@ -421,7 +460,49 @@ class PlotDataset:
                 "'",
             }
         ):
-            return stripped[1:-1]
+            stripped = stripped[1:-1]
+
+        if dtype == pl.Date:
+            try:
+                return date.fromisoformat(stripped)
+            except ValueError as error:
+                raise ValueError(
+                    "Invalid --filter value for Date column. Expected ISO-8601 date "
+                    "(YYYY-MM-DD)."
+                ) from error
+
+        if self._is_datetime_dtype(dtype):
+            try:
+                parsed = datetime.fromisoformat(stripped)
+            except ValueError as error:
+                raise ValueError(
+                    "Invalid --filter value for Datetime column. Expected ISO-8601 "
+                    "datetime (for example 2026-01-01T12:34:56)."
+                ) from error
+            timezone_name = getattr(dtype, "time_zone", None)
+            if timezone_name:
+                if parsed.tzinfo is None:
+                    if timezone_name == "UTC":
+                        return parsed.replace(tzinfo=UTC)
+                    try:
+                        return parsed.replace(tzinfo=ZoneInfo(timezone_name))
+                    except Exception as error:
+                        raise ValueError(
+                            "Invalid timezone metadata for Datetime filter comparison: "
+                            f"{timezone_name}"
+                        ) from error
+                if timezone_name == "UTC":
+                    return parsed.astimezone(UTC)
+                try:
+                    return parsed.astimezone(ZoneInfo(timezone_name))
+                except Exception as error:
+                    raise ValueError(
+                        "Invalid timezone metadata for Datetime filter comparison: "
+                        f"{timezone_name}"
+                    ) from error
+            if parsed.tzinfo is not None:
+                return parsed.astimezone(UTC).replace(tzinfo=None)
+            return parsed
 
         lowered = stripped.lower()
         if lowered in {"true", "false"}:
@@ -445,13 +526,19 @@ class PlotDataset:
     ) -> list[str]:
         if kind != "auto" or chart_kind != "scatter":
             return []
-        if not self._is_numeric_dtype(x_dtype):
+        is_numeric_x = self._is_numeric_dtype(x_dtype)
+        is_temporal_x = self._is_temporal_dtype(x_dtype)
+        if not is_numeric_x and not is_temporal_x:
             return []
         if duplicate_x_count > 0:
+            if is_temporal_x:
+                return [
+                    "Auto-selected scatter because temporal x-values contain duplicates."
+                ]
             return [
                 "Auto-selected scatter because numeric x-values contain duplicates."
             ]
-        if not sorted_x:
+        if is_numeric_x and not sorted_x:
             return ["Auto-selected scatter because numeric x-values are not monotonic."]
         return []
 
@@ -579,6 +666,17 @@ class PlotDataset:
         warnings.extend(scatter_warnings)
         if not scatter_points:
             raise ValueError("No finite points available for scatter plot.")
+        scatter_inlier_points, scatter_outlier_points = self._split_scatter_outliers(
+            scatter_points
+        )
+        if scatter_outlier_points:
+            warnings.append(
+                (
+                    "Scatter classified "
+                    f"{len(scatter_outlier_points)} outlier points "
+                    "using robust local y-support."
+                )
+            )
         return PlotResult(
             chart_kind="scatter",
             x_column=x_column,
@@ -595,6 +693,8 @@ class PlotDataset:
             aggregated=aggregated,
             line_interpolation=None,
             scatter_points=scatter_points,
+            scatter_inlier_points=scatter_inlier_points,
+            scatter_outlier_points=scatter_outlier_points,
             warnings=warnings,
         )
 
@@ -659,6 +759,8 @@ class PlotDataset:
             return float(value)
         if isinstance(value, Decimal):
             return float(value)
+        if isinstance(value, timedelta):
+            return value.total_seconds()
         if isinstance(value, datetime):
             if value.tzinfo is None:
                 return (value - _NAIVE_UNIX_EPOCH).total_seconds()
@@ -675,6 +777,105 @@ class PlotDataset:
                 + value.microsecond / 1_000_000.0
             )
         return None
+
+    def _split_scatter_outliers(
+        self, points: list[tuple[float, float]]
+    ) -> tuple[list[tuple[float, float]], list[tuple[float, float]]]:
+        if len(points) < _MIN_OUTLIER_POINTS:
+            return points, []
+
+        min_x = min(x for x, _ in points)
+        max_x = max(x for x, _ in points)
+        if math.isclose(min_x, max_x, rel_tol=1e-9, abs_tol=1e-9):
+            return self._split_points_by_mask(
+                points,
+                self._robust_outlier_mask([y for _, y in points]),
+            )
+
+        bucket_count = min(_MAX_OUTLIER_BUCKETS, max(1, int(math.sqrt(len(points)))))
+        bucket_width = (max_x - min_x) / bucket_count
+        if bucket_width <= 0:
+            return self._split_points_by_mask(
+                points,
+                self._robust_outlier_mask([y for _, y in points]),
+            )
+
+        buckets: list[list[tuple[int, float]]] = [[] for _ in range(bucket_count)]
+        for index, (x, y) in enumerate(points):
+            bucket_index = min(
+                bucket_count - 1,
+                max(0, int((x - min_x) / bucket_width)),
+            )
+            buckets[bucket_index].append((index, y))
+
+        outlier_mask = [False] * len(points)
+        sparse_indices: list[int] = []
+        for bucket in buckets:
+            if len(bucket) < _MIN_BUCKET_POINTS:
+                sparse_indices.extend(index for index, _ in bucket)
+                continue
+            bucket_values = [value for _, value in bucket]
+            bucket_mask = self._robust_outlier_mask(
+                bucket_values,
+                min_points=_MIN_BUCKET_POINTS,
+            )
+            for (index, _), is_outlier in zip(bucket, bucket_mask, strict=False):
+                if is_outlier:
+                    outlier_mask[index] = True
+
+        if len(sparse_indices) >= _MIN_OUTLIER_POINTS:
+            sparse_values = [points[index][1] for index in sparse_indices]
+            sparse_mask = self._robust_outlier_mask(sparse_values)
+            for index, is_outlier in zip(sparse_indices, sparse_mask, strict=False):
+                if is_outlier:
+                    outlier_mask[index] = True
+
+        return self._split_points_by_mask(points, outlier_mask)
+
+    def _robust_outlier_mask(
+        self,
+        values: list[float],
+        *,
+        min_points: int = _MIN_OUTLIER_POINTS,
+    ) -> list[bool]:
+        if len(values) < min_points:
+            return [False] * len(values)
+
+        values_array = np.asarray(values, dtype=float)
+        median = float(np.nanmedian(values_array))
+        mad = float(
+            stats.median_abs_deviation(
+                values_array,
+                scale="normal",
+                nan_policy="omit",
+            )
+        )
+        if math.isfinite(mad) and mad > _EPSILON:
+            robust_z = np.abs((values_array - median) / mad)
+            return (robust_z > _ROBUST_Z_THRESHOLD).tolist()
+
+        iqr = float(stats.iqr(values_array, rng=(25, 75), nan_policy="omit"))
+        if iqr <= _EPSILON:
+            return [False] * len(values)
+        q1 = float(np.nanpercentile(values_array, 25))
+        q3 = float(np.nanpercentile(values_array, 75))
+        lower = q1 - 1.5 * iqr
+        upper = q3 + 1.5 * iqr
+        return ((values_array < lower) | (values_array > upper)).tolist()
+
+    def _split_points_by_mask(
+        self,
+        points: list[tuple[float, float]],
+        outlier_mask: list[bool],
+    ) -> tuple[list[tuple[float, float]], list[tuple[float, float]]]:
+        inliers: list[tuple[float, float]] = []
+        outliers: list[tuple[float, float]] = []
+        for point, is_outlier in zip(points, outlier_mask, strict=False):
+            if is_outlier:
+                outliers.append(point)
+            else:
+                inliers.append(point)
+        return inliers, outliers
 
     def _line_points(self, frame: pl.DataFrame) -> tuple[list[float], list[float], int]:
         x_values = frame.get_column("_x").to_list()

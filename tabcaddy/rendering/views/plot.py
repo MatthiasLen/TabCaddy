@@ -14,33 +14,24 @@ from tabcaddy.rendering.charts.scatter_chart import render_scatter_chart
 from tabcaddy.rendering.console import RenderProfile, resolve_render_profile
 
 
-_NARROW_CONSOLE_MAX_WIDTH = 80
-_STANDARD_MIN_WIDTH = 60
-_SPARSE_POINT_THRESHOLD = 12
-_WIDE_SCALING_FACTOR = 0.6
-_MAX_AUTOMATED_WIDTH = 120
+_WIDTH_BREAKPOINT = 100
+_WIDE_SCALING_FACTOR = 0.8
+_MAX_AUTO_CHART_WIDTH = 480
 _CHART_AXIS_OVERHEAD = 11
 
 
-def _resolve_chart_width(*, console_width: int | None, point_count: int) -> int:
+def _resolve_chart_width(*, console_width: int | None) -> int:
     if console_width is None:
-        return _STANDARD_MIN_WIDTH
+        return _WIDTH_BREAKPOINT
 
     console_width = max(2, console_width)
-    if console_width <= _NARROW_CONSOLE_MAX_WIDTH:
+    if console_width <= _WIDTH_BREAKPOINT:
         return console_width
 
-    scaled_width = min(
-        _MAX_AUTOMATED_WIDTH,
-        _NARROW_CONSOLE_MAX_WIDTH
-        + int((console_width - _NARROW_CONSOLE_MAX_WIDTH) * _WIDE_SCALING_FACTOR),
+    scaled_width = _WIDTH_BREAKPOINT + int(
+        (console_width - _WIDTH_BREAKPOINT) * _WIDE_SCALING_FACTOR
     )
-
-    if point_count <= _SPARSE_POINT_THRESHOLD:
-        return min(_STANDARD_MIN_WIDTH, scaled_width)
-
-    point_based_cap = max(_STANDARD_MIN_WIDTH, min(point_count, _MAX_AUTOMATED_WIDTH))
-    return min(scaled_width, point_based_cap)
+    return min(scaled_width, _MAX_AUTO_CHART_WIDTH)
 
 
 def _build_warning_panel(warnings: list[str], *, render: RenderProfile) -> object:
@@ -115,12 +106,7 @@ def build_multi_y_plot_view(
     if not results_by_y:
         return "No plot data"
 
-    first_plot_result = results_by_y[0][1].plots[0].result
-    metadata = _build_plot_metadata_table(
-        first_plot_result,
-        render=render,
-        y_value=_build_multi_y_value_text(results_by_y),
-    )
+    metadata = _build_multi_y_plot_metadata_table(results_by_y, render=render)
 
     blocks: list[object] = []
     blocks.append(metadata)
@@ -141,13 +127,128 @@ def build_multi_y_plot_view(
     return Group(*blocks)
 
 
-def _build_multi_y_value_text(results_by_y: list[tuple[str, PlotRunResult]]) -> Text:
-    y_text = Text()
+def _summarize_int(values: list[int]) -> str:
+    if not values:
+        return "n/a"
+    if len(values) == 1:
+        return str(values[0])
+    minimum = min(values)
+    maximum = max(values)
+    if minimum == maximum:
+        return str(minimum)
+    return f"{minimum}..{maximum}"
+
+
+def _summarize_bool(values: list[bool]) -> str:
+    if not values:
+        return "n/a"
+    unique = set(values)
+    if len(unique) > 1:
+        return "mixed"
+    return "yes" if values[0] else "no"
+
+
+def _summarize_str(values: list[str]) -> str:
+    if not values:
+        return "n/a"
+    unique = sorted(set(values))
+    if len(unique) == 1:
+        return unique[0]
+    return " / ".join(unique)
+
+
+def _series_cell_value(
+    plot_run_result: PlotRunResult,
+    selector,
+    *,
+    summarizer,
+) -> str:
+    series_values = [selector(file_plot.result) for file_plot in plot_run_result.plots]
+    return summarizer(series_values)
+
+
+def _build_multi_y_plot_metadata_table(
+    results_by_y: list[tuple[str, PlotRunResult]],
+    *,
+    render: RenderProfile,
+) -> object:
+    metadata = render.table(title="Plot", expand=False)
+    metadata.add_column("Field", style="cyan")
     for index, (y_column, _) in enumerate(results_by_y):
-        if index > 0:
-            y_text.append("\n")
-        y_text.append(y_column, style=get_line_series_rich_style(index))
-    return y_text
+        metadata.add_column(y_column, style=get_line_series_rich_style(index))
+
+    def add_series_row(
+        label: str,
+        selector,
+        *,
+        summarizer,
+    ) -> None:
+        metadata.add_row(
+            label,
+            *[
+                _series_cell_value(plot_run_result, selector, summarizer=summarizer)
+                for _, plot_run_result in results_by_y
+            ],
+        )
+
+    add_series_row("Kind", lambda result: result.chart_kind, summarizer=_summarize_str)
+    add_series_row("X", lambda result: result.x_column, summarizer=_summarize_str)
+    add_series_row(
+        "Input rows",
+        lambda result: result.row_count,
+        summarizer=_summarize_int,
+    )
+    add_series_row(
+        "Plotted rows",
+        lambda result: result.plotted_rows,
+        summarizer=_summarize_int,
+    )
+    add_series_row(
+        "Dropped rows",
+        lambda result: result.dropped_rows,
+        summarizer=_summarize_int,
+    )
+    add_series_row(
+        "Duplicate x",
+        lambda result: result.duplicate_x_count,
+        summarizer=_summarize_int,
+    )
+    add_series_row(
+        "Sorted x",
+        lambda result: result.sorted_x,
+        summarizer=_summarize_bool,
+    )
+    add_series_row(
+        "Auto-sorted",
+        lambda result: result.auto_sorted,
+        summarizer=_summarize_bool,
+    )
+    add_series_row(
+        "Aggregated",
+        lambda result: result.aggregated,
+        summarizer=_summarize_bool,
+    )
+    add_series_row(
+        "Interpolation",
+        lambda result: result.line_interpolation or "n/a",
+        summarizer=_summarize_str,
+    )
+    add_series_row(
+        "X Axis Kind",
+        lambda result: result.x_axis_kind,
+        summarizer=_summarize_str,
+    )
+    add_series_row(
+        "X Time Unit",
+        lambda result: result.x_axis_time_unit or "n/a",
+        summarizer=_summarize_str,
+    )
+    add_series_row(
+        "X Time Zone",
+        lambda result: result.x_axis_timezone or "n/a",
+        summarizer=_summarize_str,
+    )
+    return metadata
 
 
 def _build_plot_metadata_table(
@@ -165,6 +266,8 @@ def _build_plot_metadata_table(
     metadata.add_row("Input rows", str(result.row_count))
     metadata.add_row("Plotted rows", str(result.plotted_rows))
     metadata.add_row("Dropped rows", str(result.dropped_rows))
+    if result.chart_kind == "scatter":
+        metadata.add_row("Outliers", str(len(result.scatter_outlier_points)))
     metadata.add_row("Duplicate x", str(result.duplicate_x_count))
     metadata.add_row("Sorted x", "yes" if result.sorted_x else "no")
     metadata.add_row("Auto-sorted", "yes" if result.auto_sorted else "no")
@@ -196,7 +299,6 @@ def _build_single_plot_view(
 
     target_width = _resolve_chart_width(
         console_width=render.console_width,
-        point_count=result.plotted_rows,
     )
     chart_width = max(2, target_width - _CHART_AXIS_OVERHEAD)
 
@@ -215,12 +317,15 @@ def _build_single_plot_view(
             interpolation=result.line_interpolation or "linear",
             x_tick_formatter=x_tick_formatter,
             color=line_color_ansi,
+            ascii_only=render.ascii_only,
             width=chart_width,
         )
     else:
         chart = render_scatter_chart(
-            result.scatter_points,
-            point="#" if render.ascii_only else "•",
+            result.scatter_inlier_points or result.scatter_points,
+            outlier_points=result.scatter_outlier_points,
+            point="." if render.ascii_only else "•",
+            outlier_point="*" if render.ascii_only else "·",
             y_axis_char="|" if render.ascii_only else "│",
             x_axis_char="-" if render.ascii_only else "─",
             axis_corner_char="+" if render.ascii_only else "└",

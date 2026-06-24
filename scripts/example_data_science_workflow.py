@@ -140,7 +140,7 @@ def build_sample_data(workflow_root: Path) -> tuple[Path, Path]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Run an end-to-end TabCaddy workflow that exercises every CLI command."
+        description="Run an end-to-end TabCaddy workflow covering key TabCaddy CLI capabilities."
     )
     parser.add_argument(
         "--workspace",
@@ -224,17 +224,54 @@ def transform(df: pl.DataFrame, context=None) -> pl.DataFrame:
     )
 
     # 9) Compile curated files into a reusable TabCaddy compiled dataset for downstream tasks.
+    # Use --validate so compile also demonstrates provenance/row-count integrity checks.
     compiled_initial = workflow_root / "compiled_initial"
     tc(
         tabcaddy_cmd,
-        ["compile", str(cleaned_batch), "--output", str(compiled_initial)],
+        [
+            "compile",
+            str(cleaned_batch),
+            "--output",
+            str(compiled_initial),
+            "--validate",
+        ],
         repo_root,
     )
 
     # 10) Inspect compiled rows to validate the curated output produced from the compile stage.
     tc(tabcaddy_cmd, ["head", str(compiled_initial), "--n", "5"], repo_root)
 
-    # 11) Transform the incoming batch with the same business logic to keep processing consistent.
+    # 11) Plot transformed revenue trends to include visual diagnostics in the demo.
+    tc(
+        tabcaddy_cmd,
+        [
+            "plot",
+            str(cleaned_batch / "service" / "orders_2026_01.csv"),
+            "event_date",
+            "net_revenue",
+            "--kind",
+            "line",
+            "--interpolation",
+            "nearest",
+        ],
+        repo_root,
+    )
+
+    # 12) Plot price vs net revenue as a scatter view to quickly inspect margin behavior.
+    tc(
+        tabcaddy_cmd,
+        [
+            "plot",
+            str(cleaned_batch / "service" / "orders_2026_02.csv"),
+            "unit_price",
+            "net_revenue",
+            "--kind",
+            "scatter",
+        ],
+        repo_root,
+    )
+
+    # 13) Transform the incoming batch with the same business logic to keep processing consistent.
     tc(
         tabcaddy_cmd,
         [
@@ -246,14 +283,24 @@ def transform(df: pl.DataFrame, context=None) -> pl.DataFrame:
         repo_root,
     )
 
-    # 12) Diff curated baseline vs curated incoming at full depth to review what changed.
+    # 14) Diff curated baseline vs curated incoming at full depth with key-based row diagnostics.
     tc(
         tabcaddy_cmd,
-        ["diff", str(cleaned_batch), str(incoming_cleaned), "--level", "full"],
+        [
+            "diff",
+            str(cleaned_batch),
+            str(incoming_cleaned),
+            "--level",
+            "full",
+            "--on",
+            "order_id",
+            "--row-examples",
+            "5",
+        ],
         repo_root,
     )
 
-    # 13) Run a dry merge plan first to preview matches, conflicts, and schema behavior safely.
+    # 15) Run a dry merge plan first to preview matches, conflicts, and schema behavior safely.
     merged_folder = workflow_root / "merged_archive"
     merge_args = [
         "merge",
@@ -270,26 +317,46 @@ def transform(df: pl.DataFrame, context=None) -> pl.DataFrame:
     ]
     tc(tabcaddy_cmd, [*merge_args, "--dry"], repo_root)
 
-    # 14) Execute the real merge after validation to produce the consolidated archive.
+    # 16) Execute the real merge after validation to produce the consolidated archive.
     tc(tabcaddy_cmd, merge_args, repo_root)
 
-    # 15) Compile the merged archive to publish a new reusable dataset version.
+    # 17) Compile the merged archive to publish a new reusable dataset version.
     compiled_merged = workflow_root / "compiled_merged"
     tc(
         tabcaddy_cmd,
-        ["compile", str(merged_folder), "--output", str(compiled_merged)],
+        ["compile", str(merged_folder), "--output", str(compiled_merged), "--validate"],
         repo_root,
     )
 
-    # 16) Diff old vs new compiled datasets to quantify impact of the incoming release.
+    # 18) Diff old vs new compiled datasets to quantify impact of the incoming release.
+    # Compiled-vs-compiled comparisons do not support row-level key options.
     tc(
         tabcaddy_cmd,
         ["diff", str(compiled_initial), str(compiled_merged), "--level", "full"],
         repo_root,
     )
 
-    # 17) Produce a final deep summary for reporting and handoff to analytics stakeholders.
+    # 19) Produce a deep summary for reporting and handoff to analytics stakeholders.
     tc(tabcaddy_cmd, ["summary", str(compiled_merged), "--profile", "deep"], repo_root)
+
+    # 20) End with a compact trend chart over the final compiled dataset for quick storytelling.
+    tc(
+        tabcaddy_cmd,
+        [
+            "plot",
+            str(compiled_merged),
+            "event_date",
+            "net_revenue",
+            "gross_revenue",
+            "--kind",
+            "line",
+            "--aggregate-x",
+            "mean",
+            "--interpolation",
+            "nearest",
+        ],
+        repo_root,
+    )
 
     print("\nWorkflow complete. Artifacts are available under:")
     print(workflow_root)
