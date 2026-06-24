@@ -6,8 +6,7 @@ TabCaddy is a dataset-centric CLI for tabular data engineering workflows. It hel
 
 Use it to:
 
-- profile files and folders
-- inspect sample rows before modeling
+- inspect data
 - detect schema drift and dominant schema groups
 - compile heterogeneous raw data into a reusable Parquet dataset
 - scaffold and run Python transforms with Polars
