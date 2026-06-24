@@ -9,7 +9,9 @@ import re
 from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
+import numpy as np
 import polars as pl
+from scipy import stats
 
 from tabcaddy.analysis.sources import iter_dataset_files
 from tabcaddy.domain.models import DatasetSource, SourceType
@@ -19,6 +21,11 @@ from tabcaddy.shared.dataset_io import scan_dataframe, scan_parquet_dataset
 _SUPPORTED_AGGREGATIONS = {"mean", "median", "min", "max", "sum", "count"}
 _NAIVE_UNIX_EPOCH = datetime(1970, 1, 1)
 _DEFAULT_FOLDER_MAX_FILES = 5
+_MIN_OUTLIER_POINTS = 8
+_MIN_BUCKET_POINTS = 6
+_MAX_OUTLIER_BUCKETS = 24
+_ROBUST_Z_THRESHOLD = 3.5
+_EPSILON = 1e-12
 _FILTER_PATTERN = re.compile(
     r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*(==|!=|>=|<=|>|<)\s*(.+?)\s*$"
 )
@@ -51,6 +58,8 @@ class PlotResult:
     line_x_values: list[float] = field(default_factory=list)
     line_values: list[float] = field(default_factory=list)
     scatter_points: list[tuple[float, float]] = field(default_factory=list)
+    scatter_inlier_points: list[tuple[float, float]] = field(default_factory=list)
+    scatter_outlier_points: list[tuple[float, float]] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
 
 
@@ -646,6 +655,17 @@ class PlotDataset:
         warnings.extend(scatter_warnings)
         if not scatter_points:
             raise ValueError("No finite points available for scatter plot.")
+        scatter_inlier_points, scatter_outlier_points = self._split_scatter_outliers(
+            scatter_points
+        )
+        if scatter_outlier_points:
+            warnings.append(
+                (
+                    "Scatter classified "
+                    f"{len(scatter_outlier_points)} outlier points "
+                    "using robust local y-support."
+                )
+            )
         return PlotResult(
             chart_kind="scatter",
             x_column=x_column,
@@ -662,6 +682,8 @@ class PlotDataset:
             aggregated=aggregated,
             line_interpolation=None,
             scatter_points=scatter_points,
+            scatter_inlier_points=scatter_inlier_points,
+            scatter_outlier_points=scatter_outlier_points,
             warnings=warnings,
         )
 
@@ -744,6 +766,105 @@ class PlotDataset:
                 + value.microsecond / 1_000_000.0
             )
         return None
+
+    def _split_scatter_outliers(
+        self, points: list[tuple[float, float]]
+    ) -> tuple[list[tuple[float, float]], list[tuple[float, float]]]:
+        if len(points) < _MIN_OUTLIER_POINTS:
+            return points, []
+
+        min_x = min(x for x, _ in points)
+        max_x = max(x for x, _ in points)
+        if math.isclose(min_x, max_x, rel_tol=1e-9, abs_tol=1e-9):
+            return self._split_points_by_mask(
+                points,
+                self._robust_outlier_mask([y for _, y in points]),
+            )
+
+        bucket_count = min(_MAX_OUTLIER_BUCKETS, max(1, int(math.sqrt(len(points)))))
+        bucket_width = (max_x - min_x) / bucket_count
+        if bucket_width <= 0:
+            return self._split_points_by_mask(
+                points,
+                self._robust_outlier_mask([y for _, y in points]),
+            )
+
+        buckets: list[list[tuple[int, float]]] = [[] for _ in range(bucket_count)]
+        for index, (x, y) in enumerate(points):
+            bucket_index = min(
+                bucket_count - 1,
+                max(0, int((x - min_x) / bucket_width)),
+            )
+            buckets[bucket_index].append((index, y))
+
+        outlier_mask = [False] * len(points)
+        sparse_indices: list[int] = []
+        for bucket in buckets:
+            if len(bucket) < _MIN_BUCKET_POINTS:
+                sparse_indices.extend(index for index, _ in bucket)
+                continue
+            bucket_values = [value for _, value in bucket]
+            bucket_mask = self._robust_outlier_mask(
+                bucket_values,
+                min_points=_MIN_BUCKET_POINTS,
+            )
+            for (index, _), is_outlier in zip(bucket, bucket_mask, strict=False):
+                if is_outlier:
+                    outlier_mask[index] = True
+
+        if len(sparse_indices) >= _MIN_OUTLIER_POINTS:
+            sparse_values = [points[index][1] for index in sparse_indices]
+            sparse_mask = self._robust_outlier_mask(sparse_values)
+            for index, is_outlier in zip(sparse_indices, sparse_mask, strict=False):
+                if is_outlier:
+                    outlier_mask[index] = True
+
+        return self._split_points_by_mask(points, outlier_mask)
+
+    def _robust_outlier_mask(
+        self,
+        values: list[float],
+        *,
+        min_points: int = _MIN_OUTLIER_POINTS,
+    ) -> list[bool]:
+        if len(values) < min_points:
+            return [False] * len(values)
+
+        values_array = np.asarray(values, dtype=float)
+        median = float(np.nanmedian(values_array))
+        mad = float(
+            stats.median_abs_deviation(
+                values_array,
+                scale="normal",
+                nan_policy="omit",
+            )
+        )
+        if math.isfinite(mad) and mad > _EPSILON:
+            robust_z = np.abs((values_array - median) / mad)
+            return (robust_z > _ROBUST_Z_THRESHOLD).tolist()
+
+        iqr = float(stats.iqr(values_array, rng=(25, 75), nan_policy="omit"))
+        if iqr <= _EPSILON:
+            return [False] * len(values)
+        q1 = float(np.nanpercentile(values_array, 25))
+        q3 = float(np.nanpercentile(values_array, 75))
+        lower = q1 - 1.5 * iqr
+        upper = q3 + 1.5 * iqr
+        return ((values_array < lower) | (values_array > upper)).tolist()
+
+    def _split_points_by_mask(
+        self,
+        points: list[tuple[float, float]],
+        outlier_mask: list[bool],
+    ) -> tuple[list[tuple[float, float]], list[tuple[float, float]]]:
+        inliers: list[tuple[float, float]] = []
+        outliers: list[tuple[float, float]] = []
+        for point, is_outlier in zip(points, outlier_mask, strict=False):
+            if is_outlier:
+                outliers.append(point)
+            else:
+                inliers.append(point)
+        return inliers, outliers
 
     def _line_points(self, frame: pl.DataFrame) -> tuple[list[float], list[float], int]:
         x_values = frame.get_column("_x").to_list()

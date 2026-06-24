@@ -97,3 +97,32 @@ def test_duration_x_scatter_plot_keeps_points() -> None:
     assert result.plotted_rows == 3
     assert result.dropped_rows == 0
     assert result.scatter_points == [(1.0, 1.0), (2.0, 2.0), (3.0, 3.0)]
+    assert result.scatter_outlier_points == []
+
+
+def test_scatter_plot_classifies_local_outlier() -> None:
+    dataset = PlotDataset()
+    x_values = [float(index) for index in range(24)]
+    y_values = [10.0 + (0.2 if index % 2 == 0 else -0.2) for index in range(24)]
+    y_values[11] = 80.0
+
+    lazyframe = pl.DataFrame({"x": x_values, "y": y_values}).lazy()
+
+    result = dataset._run_for_lazyframe(
+        lazyframe,
+        "x",
+        "y",
+        kind="scatter",
+        aggregate_x=None,
+        line_interpolation="linear",
+        fail_on_x_duplicates=False,
+        fail_on_unsorted_x=False,
+        filter_expr=None,
+    )
+
+    assert result.chart_kind == "scatter"
+    assert result.plotted_rows == len(x_values)
+    assert (11.0, 80.0) in result.scatter_outlier_points
+    assert len(result.scatter_inlier_points) + len(
+        result.scatter_outlier_points
+    ) == len(result.scatter_points)

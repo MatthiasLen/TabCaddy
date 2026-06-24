@@ -16,6 +16,7 @@ from tabcaddy.rendering.console import RenderProfile, resolve_render_profile
 
 _WIDTH_BREAKPOINT = 100
 _WIDE_SCALING_FACTOR = 0.8
+_MAX_AUTO_CHART_WIDTH = 480
 _CHART_AXIS_OVERHEAD = 11
 
 
@@ -28,9 +29,10 @@ def _resolve_chart_width(*, console_width: int | None, point_count: int) -> int:
         return console_width
     # Keep signature stable for existing call sites and tests.
     _ = point_count
-    return _WIDTH_BREAKPOINT + int(
+    scaled_width = _WIDTH_BREAKPOINT + int(
         (console_width - _WIDTH_BREAKPOINT) * _WIDE_SCALING_FACTOR
     )
+    return min(scaled_width, _MAX_AUTO_CHART_WIDTH)
 
 
 def _build_warning_panel(warnings: list[str], *, render: RenderProfile) -> object:
@@ -265,6 +267,8 @@ def _build_plot_metadata_table(
     metadata.add_row("Input rows", str(result.row_count))
     metadata.add_row("Plotted rows", str(result.plotted_rows))
     metadata.add_row("Dropped rows", str(result.dropped_rows))
+    if result.chart_kind == "scatter":
+        metadata.add_row("Outliers", str(len(result.scatter_outlier_points)))
     metadata.add_row("Duplicate x", str(result.duplicate_x_count))
     metadata.add_row("Sorted x", "yes" if result.sorted_x else "no")
     metadata.add_row("Auto-sorted", "yes" if result.auto_sorted else "no")
@@ -320,8 +324,10 @@ def _build_single_plot_view(
         )
     else:
         chart = render_scatter_chart(
-            result.scatter_points,
-            point="#" if render.ascii_only else "•",
+            result.scatter_inlier_points or result.scatter_points,
+            outlier_points=result.scatter_outlier_points,
+            point="." if render.ascii_only else "•",
+            outlier_point="*" if render.ascii_only else "·",
             y_axis_char="|" if render.ascii_only else "│",
             x_axis_char="-" if render.ascii_only else "─",
             axis_corner_char="+" if render.ascii_only else "└",

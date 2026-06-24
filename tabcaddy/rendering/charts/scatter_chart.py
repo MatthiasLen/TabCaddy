@@ -16,21 +16,28 @@ def _format_axis(value: float) -> str:
 def render_scatter_chart(
     points: Sequence[tuple[float, float]],
     *,
+    outlier_points: Sequence[tuple[float, float]] | None = None,
     width: int = 48,
     height: int = 12,
     point: str = "•",
+    outlier_point: str = "·",
     y_axis_char: str = "│",
     x_axis_char: str = "─",
     axis_corner_char: str = "└",
     x_tick_formatter: Callable[[float], str] | None = None,
 ) -> str:
-    if not points:
+    outlier_points = outlier_points or ()
+    if not points and not outlier_points:
         return ""
 
     width = max(2, width)
     height = max(2, height)
 
-    finite_points = [(x, y) for x, y in points if math.isfinite(x) and math.isfinite(y)]
+    finite_points = [
+        (x, y)
+        for x, y in [*points, *outlier_points]
+        if math.isfinite(x) and math.isfinite(y)
+    ]
     if not finite_points:
         return ""
 
@@ -39,6 +46,7 @@ def render_scatter_chart(
     min_x, max_x = min(x_values), max(x_values)
     min_y, max_y = min(y_values), max(y_values)
     label_min_x, label_max_x = min_x, max_x
+    label_min_y, label_max_y = min_y, max_y
 
     if math.isclose(min_x, max_x, rel_tol=1e-9, abs_tol=1e-9):
         min_x -= 0.5
@@ -48,17 +56,24 @@ def render_scatter_chart(
         max_y += 0.5
 
     grid = [[" " for _ in range(width)] for _ in range(height)]
-    for x, y in finite_points:
-        x_pos = int(round((x - min_x) / (max_x - min_x) * (width - 1)))
-        y_pos = int(round((y - min_y) / (max_y - min_y) * (height - 1)))
-        row = height - 1 - max(0, min(height - 1, y_pos))
-        col = max(0, min(width - 1, x_pos))
-        grid[row][col] = point
 
-    label_width = max(len(_format_axis(min_y)), len(_format_axis(max_y)), 6)
+    def plot_points(values: Sequence[tuple[float, float]], marker: str) -> None:
+        for x, y in values:
+            if not (math.isfinite(x) and math.isfinite(y)):
+                continue
+            x_pos = int(round((x - min_x) / (max_x - min_x) * (width - 1)))
+            y_pos = int(round((y - min_y) / (max_y - min_y) * (height - 1)))
+            row = height - 1 - max(0, min(height - 1, y_pos))
+            col = max(0, min(width - 1, x_pos))
+            grid[row][col] = marker
+
+    plot_points(points, point)
+    plot_points(outlier_points, outlier_point)
+
+    label_width = max(len(_format_axis(label_min_y)), len(_format_axis(label_max_y)), 6)
     lines: list[str] = []
     for index, row in enumerate(grid):
-        y_value = max_y - (index / (height - 1)) * (max_y - min_y)
+        y_value = label_max_y - (index / (height - 1)) * (label_max_y - label_min_y)
         lines.append(
             f"{_format_axis(y_value):>{label_width}} {y_axis_char}{''.join(row)}"
         )
