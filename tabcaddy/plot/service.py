@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date, datetime, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 import math
 from pathlib import Path
 import re
 from typing import Any, Literal
+from zoneinfo import ZoneInfo
 
 import polars as pl
 
@@ -407,12 +408,15 @@ class PlotDataset:
         column, operator, raw_value = match.group(1), match.group(2), match.group(3)
         if column not in schema:
             raise ValueError(f"Column not found in --filter: {column}")
+        column_dtype = schema[column]
         return _FILTER_OPERATORS[operator](
             pl.col(column),
-            self._parse_filter_value(raw_value),
+            self._parse_filter_value(raw_value, dtype=column_dtype),
         )
 
-    def _parse_filter_value(self, value: str) -> bool | int | float | str:
+    def _parse_filter_value(
+        self, value: str, *, dtype: pl.DataType
+    ) -> bool | int | float | str | date | datetime:
         stripped = value.strip()
         if (
             len(stripped) >= 2
@@ -423,7 +427,49 @@ class PlotDataset:
                 "'",
             }
         ):
-            return stripped[1:-1]
+            stripped = stripped[1:-1]
+
+        if dtype == pl.Date:
+            try:
+                return date.fromisoformat(stripped)
+            except ValueError as error:
+                raise ValueError(
+                    "Invalid --filter value for Date column. Expected ISO-8601 date "
+                    "(YYYY-MM-DD)."
+                ) from error
+
+        if dtype == pl.Datetime or dtype.base_type() == pl.Datetime:
+            try:
+                parsed = datetime.fromisoformat(stripped)
+            except ValueError as error:
+                raise ValueError(
+                    "Invalid --filter value for Datetime column. Expected ISO-8601 "
+                    "datetime (for example 2026-01-01T12:34:56)."
+                ) from error
+            timezone_name = getattr(dtype, "time_zone", None)
+            if timezone_name:
+                if parsed.tzinfo is None:
+                    if timezone_name == "UTC":
+                        return parsed.replace(tzinfo=UTC)
+                    try:
+                        return parsed.replace(tzinfo=ZoneInfo(timezone_name))
+                    except Exception as error:
+                        raise ValueError(
+                            "Invalid timezone metadata for Datetime filter comparison: "
+                            f"{timezone_name}"
+                        ) from error
+                if timezone_name == "UTC":
+                    return parsed.astimezone(UTC)
+                try:
+                    return parsed.astimezone(ZoneInfo(timezone_name))
+                except Exception as error:
+                    raise ValueError(
+                        "Invalid timezone metadata for Datetime filter comparison: "
+                        f"{timezone_name}"
+                    ) from error
+            if parsed.tzinfo is not None:
+                return parsed.astimezone(UTC).replace(tzinfo=None)
+            return parsed
 
         lowered = stripped.lower()
         if lowered in {"true", "false"}:

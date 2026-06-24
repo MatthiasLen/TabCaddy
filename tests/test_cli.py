@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 import json
 from pathlib import Path
 
@@ -1130,6 +1130,132 @@ def test_plot_filter_rejects_invalid_syntax(tmp_path: Path) -> None:
 
     assert result.exit_code == 1
     assert "Invalid --filter expression" in result.stdout
+
+
+def test_plot_filter_datetime_column_supports_iso8601_gte(tmp_path: Path) -> None:
+    parquet_file = tmp_path / "filtered_datetime.parquet"
+    pl.DataFrame(
+        {
+            "ts": [
+                datetime(2026, 1, 1, 0, 0, 0),
+                datetime(2026, 1, 1, 1, 0, 0),
+                datetime(2026, 1, 1, 2, 0, 0),
+            ],
+            "y": [10.0, 20.0, 30.0],
+        }
+    ).write_parquet(parquet_file)
+
+    result = runner.invoke(
+        app,
+        [
+            "plot",
+            str(parquet_file),
+            "ts",
+            "y",
+            "--kind",
+            "line",
+            "--filter",
+            "ts>=2026-01-01T01:00:00",
+        ],
+    )
+
+    assert result.exit_code == 0
+    plotted_rows_line = next(
+        line for line in result.stdout.splitlines() if "Plotted rows" in line
+    )
+    assert "2" in plotted_rows_line
+
+
+def test_plot_filter_date_column_supports_iso8601_equality(tmp_path: Path) -> None:
+    parquet_file = tmp_path / "filtered_date.parquet"
+    pl.DataFrame(
+        {
+            "d": [date(2026, 1, 1), date(2026, 1, 2), date(2026, 1, 3)],
+            "y": [10.0, 20.0, 30.0],
+        }
+    ).write_parquet(parquet_file)
+
+    result = runner.invoke(
+        app,
+        [
+            "plot",
+            str(parquet_file),
+            "d",
+            "y",
+            "--kind",
+            "line",
+            "--filter",
+            "d==2026-01-02",
+        ],
+    )
+
+    assert result.exit_code == 0
+    plotted_rows_line = next(
+        line for line in result.stdout.splitlines() if "Plotted rows" in line
+    )
+    assert "1" in plotted_rows_line
+
+
+def test_plot_filter_datetime_column_rejects_invalid_iso8601_literal(
+    tmp_path: Path,
+) -> None:
+    parquet_file = tmp_path / "filtered_datetime_invalid.parquet"
+    pl.DataFrame(
+        {
+            "ts": [datetime(2026, 1, 1, 0, 0, 0)],
+            "y": [10.0],
+        }
+    ).write_parquet(parquet_file)
+
+    result = runner.invoke(
+        app,
+        [
+            "plot",
+            str(parquet_file),
+            "ts",
+            "y",
+            "--filter",
+            "ts>=2026-13-01T00:00:00",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "Invalid --filter value for Datetime column" in result.stdout
+
+
+def test_plot_filter_utc_datetime_column_accepts_date_literal(tmp_path: Path) -> None:
+    parquet_file = tmp_path / "filtered_utc_datetime.parquet"
+    frame = pl.DataFrame(
+        {
+            "DATE": [
+                datetime(2025, 1, 31, 23, 0, 0),
+                datetime(2025, 2, 1, 0, 0, 0),
+                datetime(2025, 2, 2, 12, 0, 0),
+            ],
+            "CURRENT": [0.1, 0.2, 0.3],
+        }
+    ).with_columns(pl.col("DATE").dt.replace_time_zone("UTC"))
+    frame.write_parquet(parquet_file)
+
+    result = runner.invoke(
+        app,
+        [
+            "plot",
+            str(parquet_file),
+            "DATE",
+            "CURRENT",
+            "--kind",
+            "line",
+            "--filter",
+            "DATE>=2025-02-01",
+        ],
+    )
+
+    assert result.exit_code == 0
+    plotted_rows_line = next(
+        line for line in result.stdout.splitlines() if "Plotted rows" in line
+    )
+    assert "2" in plotted_rows_line
 
 
 def test_plot_line_rejects_categorical_x_values(tmp_path: Path) -> None:

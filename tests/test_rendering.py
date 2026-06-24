@@ -323,13 +323,13 @@ def test_plot_chart_width_uses_full_width_for_narrow_console() -> None:
 def test_plot_chart_width_caps_sparse_data_on_wide_console() -> None:
     width = _resolve_chart_width(console_width=140, point_count=5)
 
-    assert width == 60
+    assert width == 132
 
 
 def test_plot_chart_width_scales_for_dense_data_on_wide_console() -> None:
     width = _resolve_chart_width(console_width=140, point_count=500)
 
-    assert width == 116
+    assert width == 132
 
 
 def test_multi_y_plot_metadata_uses_per_series_values() -> None:

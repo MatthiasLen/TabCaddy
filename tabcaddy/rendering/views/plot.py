@@ -14,33 +14,23 @@ from tabcaddy.rendering.charts.scatter_chart import render_scatter_chart
 from tabcaddy.rendering.console import RenderProfile, resolve_render_profile
 
 
-_NARROW_CONSOLE_MAX_WIDTH = 80
-_STANDARD_MIN_WIDTH = 60
-_SPARSE_POINT_THRESHOLD = 12
-_WIDE_SCALING_FACTOR = 0.6
-_MAX_AUTOMATED_WIDTH = 120
+_WIDTH_BREAKPOINT = 100
+_WIDE_SCALING_FACTOR = 0.8
 _CHART_AXIS_OVERHEAD = 11
 
 
 def _resolve_chart_width(*, console_width: int | None, point_count: int) -> int:
     if console_width is None:
-        return _STANDARD_MIN_WIDTH
+        return _WIDTH_BREAKPOINT
 
     console_width = max(2, console_width)
-    if console_width <= _NARROW_CONSOLE_MAX_WIDTH:
+    if console_width <= _WIDTH_BREAKPOINT:
         return console_width
-
-    scaled_width = min(
-        _MAX_AUTOMATED_WIDTH,
-        _NARROW_CONSOLE_MAX_WIDTH
-        + int((console_width - _NARROW_CONSOLE_MAX_WIDTH) * _WIDE_SCALING_FACTOR),
+    # Keep signature stable for existing call sites and tests.
+    _ = point_count
+    return _WIDTH_BREAKPOINT + int(
+        (console_width - _WIDTH_BREAKPOINT) * _WIDE_SCALING_FACTOR
     )
-
-    if point_count <= _SPARSE_POINT_THRESHOLD:
-        return min(_STANDARD_MIN_WIDTH, scaled_width)
-
-    point_based_cap = max(_STANDARD_MIN_WIDTH, min(point_count, _MAX_AUTOMATED_WIDTH))
-    return min(scaled_width, point_based_cap)
 
 
 def _build_warning_panel(warnings: list[str], *, render: RenderProfile) -> object:
