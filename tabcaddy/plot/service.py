@@ -365,6 +365,8 @@ class PlotDataset:
     ]:
         x_axis_kind = self._infer_x_axis_kind(x_dtype)
         if x_axis_kind == "temporal":
+            if self._is_time_dtype(x_dtype):
+                return x_axis_kind, None, None
             if self._is_duration_dtype(x_dtype):
                 return x_axis_kind, None, None
             return x_axis_kind, "epoch_seconds", "UTC"
