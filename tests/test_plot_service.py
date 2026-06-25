@@ -162,6 +162,16 @@ def test_parse_filter_value_keeps_unquoted_numeric_for_numeric_column() -> None:
     assert parsed == 42
 
 
+def test_parse_filter_expression_accepts_dotted_column_name() -> None:
+    dataset = PlotDataset()
+
+    column, operator, raw_value = dataset._parse_filter_expression("a.b>=2")
+
+    assert column == "a.b"
+    assert operator == ">="
+    assert raw_value == "2"
+
+
 def test_histogram_plot_builds_bins_for_numeric_column() -> None:
     dataset = PlotDataset()
     lazyframe = pl.DataFrame({"value": [1.0, 2.0, 3.0, 4.0]}).lazy()
