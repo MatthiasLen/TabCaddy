@@ -194,7 +194,8 @@ Plots columns in the terminal as line, scatter, or histogram charts.
 - line plots fail on duplicate `x` by default unless `--aggregate-x` is provided
 - line plots auto-sort `x` by default; use `--fail-on-x-unsorted` for strict mode
 - `--aggregate-x`, `--interpolation`, `--fail-on-x-duplicates`, and `--fail-on-x-unsorted` are line/scatter-only options
-- for folder input, `--n` limits plotting to the first `N` files (default `5`)
+- for folder input with line/scatter, omitted `--n` plots the first file (`N=1`); when provided, `--n` limits plotting to the first `N` files
+- for folder input with histogram, omitted `--n` aggregates across the full folder history; when provided, `--n` switches to per-file stacked histogram sections for the first `N` files
 - multiple columns render as stacked sections
 - rows with null values or non-numeric `y` values are dropped and reported as warnings
 

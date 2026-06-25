@@ -1522,7 +1522,8 @@ def test_plot_folder_renders_stacked_per_file_plots(tmp_path: Path) -> None:
     assert result.exit_code == 0
     assert "Folder Plot Summary" in result.stdout
     assert "File 1: a.csv" in result.stdout
-    assert "File 2: b.csv" in result.stdout
+    assert "File 2: b.csv" not in result.stdout
+    assert "Folder contains 2 files; plotted first 1." in result.stdout
 
 
 def test_plot_folder_skips_invalid_files_and_continues(tmp_path: Path) -> None:
@@ -1537,7 +1538,10 @@ def test_plot_folder_skips_invalid_files_and_continues(tmp_path: Path) -> None:
         [{"x": 1, "other": 20.0}, {"x": 2, "other": 22.0}],
     )
 
-    result = runner.invoke(app, ["plot", str(folder), "x", "y", "--kind", "line"])
+    result = runner.invoke(
+        app,
+        ["plot", str(folder), "x", "y", "--kind", "line", "--n", "2"],
+    )
 
     assert result.exit_code == 0
     assert "Folder Plot Summary" in result.stdout
@@ -1573,9 +1577,9 @@ def test_plot_folder_limits_default_number_of_files(tmp_path: Path) -> None:
     result = runner.invoke(app, ["plot", str(folder), "x", "y", "--kind", "line"])
 
     assert result.exit_code == 0
-    assert "File 5:" in result.stdout
-    assert "File 6:" not in result.stdout
-    assert "Folder contains 7 files; plotted first 5." in result.stdout
+    assert "File 1:" in result.stdout
+    assert "File 2:" not in result.stdout
+    assert "Folder contains 7 files; plotted first 1." in result.stdout
 
 
 def test_plot_folder_respects_custom_file_limit(tmp_path: Path) -> None:
@@ -1691,6 +1695,76 @@ def test_plot_histogram_rejects_aggregate_option(tmp_path: Path) -> None:
 
     assert result.exit_code == 1
     assert "--aggregate-x is not supported for --kind histogram" in result.stdout
+    assert "Traceback" not in result.stdout
+
+
+def test_plot_histogram_folder_defaults_to_aggregate_history(tmp_path: Path) -> None:
+    folder = tmp_path / "hist_history"
+    folder.mkdir()
+    _write_csv(folder / "01.csv", [{"value": 1.0}, {"value": 2.0}])
+    _write_csv(folder / "02.csv", [{"value": 3.0}, {"value": 4.0}])
+
+    result = runner.invoke(
+        app,
+        ["plot", str(folder), "value", "--kind", "histogram"],
+    )
+
+    assert result.exit_code == 0
+    assert "Folder Plot Summary" not in result.stdout
+    assert "Input rows" in result.stdout
+    assert "4" in result.stdout
+
+
+def test_plot_histogram_folder_with_n_uses_per_file_sections(tmp_path: Path) -> None:
+    folder = tmp_path / "hist_per_file"
+    folder.mkdir()
+    _write_csv(folder / "01.csv", [{"value": 1.0}, {"value": 2.0}])
+    _write_csv(folder / "02.csv", [{"value": 3.0}, {"value": 4.0}])
+
+    result = runner.invoke(
+        app,
+        ["plot", str(folder), "value", "--kind", "histogram", "--n", "2"],
+    )
+
+    assert result.exit_code == 0
+    assert "Folder Plot Summary" in result.stdout
+    assert "File 1: 01.csv" in result.stdout
+    assert "File 2: 02.csv" in result.stdout
+
+
+def test_plot_histogram_folder_skips_missing_column_with_warning(
+    tmp_path: Path,
+) -> None:
+    folder = tmp_path / "hist_mixed"
+    folder.mkdir()
+    _write_csv(folder / "has_value.csv", [{"value": 1.0}, {"value": 2.0}])
+    _write_csv(folder / "missing_value.csv", [{"other": 10.0}, {"other": 11.0}])
+
+    result = runner.invoke(
+        app,
+        ["plot", str(folder), "value", "--kind", "histogram"],
+    )
+
+    assert result.exit_code == 0
+    assert "Skipped 1 file(s) missing column 'value'" in result.stdout
+    assert "missing_value.csv" in result.stdout
+
+
+def test_plot_histogram_folder_fails_when_all_files_missing_column(
+    tmp_path: Path,
+) -> None:
+    folder = tmp_path / "hist_all_missing"
+    folder.mkdir()
+    _write_csv(folder / "a.csv", [{"other": 10.0}])
+    _write_csv(folder / "b.csv", [{"other": 11.0}])
+
+    result = runner.invoke(
+        app,
+        ["plot", str(folder), "value", "--kind", "histogram"],
+    )
+
+    assert result.exit_code == 1
+    assert "Column not found in any folder file: value" in result.stdout
     assert "Traceback" not in result.stdout
 
 

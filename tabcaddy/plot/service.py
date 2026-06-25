@@ -21,7 +21,6 @@ from tabcaddy.shared.histogram import build_numeric_histogram
 
 _SUPPORTED_AGGREGATIONS = {"mean", "median", "min", "max", "sum", "count"}
 _NAIVE_UNIX_EPOCH = datetime(1970, 1, 1)
-_DEFAULT_FOLDER_MAX_FILES = 5
 _MIN_OUTLIER_POINTS = 8
 _MIN_BUCKET_POINTS = 6
 _MAX_OUTLIER_BUCKETS = 24
@@ -105,10 +104,10 @@ class PlotDataset:
         line_interpolation: Literal["linear", "nearest"] = "linear",
         fail_on_x_duplicates: bool = False,
         fail_on_unsorted_x: bool = False,
-        folder_max_files: int = _DEFAULT_FOLDER_MAX_FILES,
+        folder_max_files: int | None = None,
         filter_expr: str | None = None,
     ) -> PlotRunResult:
-        if folder_max_files < 1:
+        if folder_max_files is not None and folder_max_files < 1:
             raise ValueError("-n must be greater than or equal to 1.")
 
         if source.source_type == SourceType.FOLDER:
@@ -121,7 +120,7 @@ class PlotDataset:
                 line_interpolation=line_interpolation,
                 fail_on_x_duplicates=fail_on_x_duplicates,
                 fail_on_unsorted_x=fail_on_unsorted_x,
-                folder_max_files=folder_max_files,
+                folder_max_files=1 if folder_max_files is None else folder_max_files,
                 filter_expr=filter_expr,
             )
 
@@ -150,13 +149,21 @@ class PlotDataset:
         source: DatasetSource,
         column: str,
         *,
-        folder_max_files: int = _DEFAULT_FOLDER_MAX_FILES,
+        folder_max_files: int | None = None,
         filter_expr: str | None = None,
+        progress_callback: Callable[[int, int], None] | None = None,
     ) -> PlotRunResult:
-        if folder_max_files < 1:
+        if folder_max_files is not None and folder_max_files < 1:
             raise ValueError("-n must be greater than or equal to 1.")
 
         if source.source_type == SourceType.FOLDER:
+            if folder_max_files is None:
+                return self._run_histogram_for_folder_aggregate(
+                    source,
+                    column,
+                    filter_expr=filter_expr,
+                    progress_callback=progress_callback,
+                )
             return self._run_histogram_for_folder(
                 source,
                 column,
@@ -245,6 +252,99 @@ class PlotDataset:
             plotted_files=len(file_results),
             skipped_files=skipped_files,
             warnings=warnings,
+        )
+
+    def _run_histogram_for_folder_aggregate(
+        self,
+        source: DatasetSource,
+        column: str,
+        *,
+        filter_expr: str | None,
+        progress_callback: Callable[[int, int], None] | None,
+    ) -> PlotRunResult:
+        files = iter_dataset_files(source)
+        if not files:
+            raise ValueError(f"No supported files found under: {source.path}")
+
+        if filter_expr is not None:
+            self._parse_filter_expression(filter_expr)
+
+        selected_lazyframes: list[pl.LazyFrame] = []
+        missing_column_files: list[str] = []
+        failed_files: list[str] = []
+        total_files = len(files)
+        for index, path in enumerate(files, start=1):
+            try:
+                lazyframe = scan_dataframe(path)
+                schema = lazyframe.collect_schema()
+            except (FileNotFoundError, ValueError, pl.exceptions.PolarsError) as error:
+                failed_files.append(f"Skipped {path.name}: {error}")
+                if progress_callback is not None:
+                    progress_callback(index, total_files)
+                continue
+
+            if column not in schema:
+                missing_column_files.append(path.name)
+                if progress_callback is not None:
+                    progress_callback(index, total_files)
+                continue
+
+            column_dtype = schema[column]
+            if column_dtype.is_nested():
+                failed_files.append(
+                    (
+                        f"Skipped {path.name}: Column '{column}' is not plottable "
+                        f"(nested type: {column_dtype})."
+                    )
+                )
+                if progress_callback is not None:
+                    progress_callback(index, total_files)
+                continue
+
+            selected_lazyframes.append(lazyframe)
+            if progress_callback is not None:
+                progress_callback(index, total_files)
+
+        if not selected_lazyframes:
+            raise ValueError(f"Column not found in any folder file: {column}")
+
+        if len(selected_lazyframes) == 1:
+            combined = selected_lazyframes[0]
+        else:
+            combined = pl.concat(selected_lazyframes, how="diagonal_relaxed")
+
+        plot = self._run_histogram_for_lazyframe(
+            combined,
+            column,
+            filter_expr=filter_expr,
+        )
+
+        warning_messages: list[str] = []
+        if missing_column_files:
+            sample = ", ".join(missing_column_files[:3])
+            remainder = len(missing_column_files) - 3
+            suffix = f", +{remainder} more" if remainder > 0 else ""
+            warning_messages.append(
+                (
+                    f"Skipped {len(missing_column_files)} file(s) missing "
+                    f"column '{column}': {sample}{suffix}."
+                )
+            )
+        if failed_files:
+            warning_messages.append(
+                f"Skipped {len(failed_files)} file(s) due to plotting errors."
+            )
+            warning_messages.extend(failed_files)
+
+        if warning_messages:
+            plot.warnings = warning_messages + plot.warnings
+
+        return PlotRunResult(
+            plots=[PlotFileResult(path=source.path, result=plot)],
+            total_files=len(files),
+            plotted_files=1,
+            skipped_files=0,
+            warnings=[],
         )
 
     def _run_histogram_for_folder(

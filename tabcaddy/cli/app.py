@@ -13,6 +13,7 @@ from tabcaddy.compilation import CompileDataset
 from tabcaddy.diff import DiffDatasets
 from tabcaddy.domain.models import DiffLevel
 from tabcaddy.domain.models import ProfileMode
+from tabcaddy.domain.models import SourceType
 from tabcaddy.merge import MergeDatasets
 from tabcaddy.plot.service import PlotDataset
 from tabcaddy.preview import HeadDataset
@@ -376,11 +377,15 @@ def plot(
         "--fail-on-x-unsorted",
         help="Fail instead of auto-sorting x-values for line plots.",
     ),
-    n: int = typer.Option(
-        5,
+    n: int | None = typer.Option(
+        None,
         "--n",
         "-n",
-        help=("Maximum number of files to plot from a folder input. "),
+        help=(
+            "Optional file limit for folder input. For line/scatter, omitted --n "
+            "uses the first file only. For histogram, omitted --n aggregates "
+            "across full folder history."
+        ),
     ),
     filter_expr: str | None = typer.Option(
         None,
@@ -424,18 +429,36 @@ def plot(
         try:
             source_resolved = resolve_source(source)
             plot_dataset = PlotDataset()
-            results_by_y = [
-                (
-                    column,
-                    plot_dataset.run_histogram(
+            results_by_y: list[tuple[str, object]] = []
+            for column in selected_columns:
+                if source_resolved.source_type == SourceType.FOLDER and n is None:
+                    with console.status(
+                        f"Scanning folder history for histogram '{column}'... 0/? files"
+                    ) as status:
+
+                        def _update_progress(processed: int, total: int) -> None:
+                            status.update(
+                                (
+                                    f"Scanning folder history for histogram '{column}'... "
+                                    f"{processed}/{total} files"
+                                )
+                            )
+
+                        run_result = plot_dataset.run_histogram(
+                            source_resolved,
+                            column,
+                            folder_max_files=n,
+                            filter_expr=filter_expr,
+                            progress_callback=_update_progress,
+                        )
+                else:
+                    run_result = plot_dataset.run_histogram(
                         source_resolved,
                         column,
                         folder_max_files=n,
                         filter_expr=filter_expr,
-                    ),
-                )
-                for column in selected_columns
-            ]
+                    )
+                results_by_y.append((column, run_result))
         except pl.exceptions.PolarsError as error:
             console.print(f"Failed to read input data for plot: {error}")
             raise typer.Exit(code=1) from error
