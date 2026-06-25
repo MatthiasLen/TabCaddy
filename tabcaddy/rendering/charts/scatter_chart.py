@@ -77,7 +77,9 @@ def render_scatter_chart(
             return _format_axis(value)
         return y_tick_formatter(value)
 
-    label_width = max(len(_format_y_tick(label_min_y)), len(_format_y_tick(label_max_y)), 6)
+    label_width = max(
+        len(_format_y_tick(label_min_y)), len(_format_y_tick(label_max_y)), 6
+    )
     lines: list[str] = []
     for index, row in enumerate(grid):
         y_value = label_max_y - (index / (height - 1)) * (label_max_y - label_min_y)
