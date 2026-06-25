@@ -1952,3 +1952,189 @@ def test_transform_user_script_failures_fail_without_traceback(
     assert runtime_result.exit_code == 1
     assert "division by zero" in runtime_result.stdout
     assert "Traceback" not in runtime_result.stdout
+
+
+def test_transform_rejects_required_keyword_only_parameter(tmp_path: Path) -> None:
+    data = tmp_path / "data"
+    data.mkdir()
+    _write_csv(data / "a.csv", [{"id": 1, "value": 10.0}])
+
+    transform_script = tmp_path / "required_kwonly_transform.py"
+    transform_script.write_text(
+        "def transform(df, context, *, required):\n    return df\n",
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "transform",
+            str(data),
+            str(transform_script),
+            str(tmp_path / "out_required_kwonly"),
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "required keyword-only parameter 'required'" in result.stdout
+    assert "Traceback" not in result.stdout
+
+
+def test_transform_rejects_varargs_signature(tmp_path: Path) -> None:
+    data = tmp_path / "data"
+    data.mkdir()
+    _write_csv(data / "a.csv", [{"id": 1, "value": 10.0}])
+
+    transform_script = tmp_path / "varargs_transform.py"
+    transform_script.write_text(
+        "def transform(df, *args):\n    return df\n",
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(
+        app,
+        ["transform", str(data), str(transform_script), str(tmp_path / "out_varargs")],
+    )
+
+    assert result.exit_code == 1
+    assert "cannot include *args" in result.stdout
+    assert "Traceback" not in result.stdout
+
+
+def test_transform_accepts_optional_keyword_only_parameters(tmp_path: Path) -> None:
+    data = tmp_path / "data"
+    data.mkdir()
+    _write_csv(data / "a.csv", [{"id": 1, "value": 10.0}])
+
+    transform_script = tmp_path / "optional_kwonly_transform.py"
+    transform_script.write_text(
+        "import polars as pl\n\n"
+        "def transform(df, context, *, suffix='ok'):\n"
+        "    return df.with_columns(pl.lit(suffix).alias('suffix'))\n",
+        encoding="utf-8",
+    )
+
+    output_dir = tmp_path / "out_optional_kwonly"
+    result = runner.invoke(
+        app,
+        ["transform", str(data), str(transform_script), str(output_dir)],
+    )
+
+    assert result.exit_code == 0
+    transformed = pl.read_csv(output_dir / "a.csv")
+    assert transformed["suffix"][0] == "ok"
+
+
+def test_transform_supports_sibling_module_imports(tmp_path: Path) -> None:
+    data = tmp_path / "data"
+    data.mkdir()
+    _write_csv(data / "a.csv", [{"id": 1, "value": 10.0}])
+
+    helper = tmp_path / "helper.py"
+    helper.write_text(
+        "import polars as pl\n\n"
+        "def add_source_flag(df):\n"
+        "    return df.with_columns(pl.lit('yes').alias('from_helper'))\n",
+        encoding="utf-8",
+    )
+
+    transform_script = tmp_path / "transform.py"
+    transform_script.write_text(
+        "import helper\n\ndef transform(df):\n    return helper.add_source_flag(df)\n",
+        encoding="utf-8",
+    )
+
+    output_dir = tmp_path / "out_with_helper"
+    result = runner.invoke(
+        app,
+        ["transform", str(data), str(transform_script), str(output_dir)],
+    )
+
+    assert result.exit_code == 0
+    transformed = pl.read_csv(output_dir / "a.csv")
+    assert transformed["from_helper"][0] == "yes"
+
+
+def test_transform_supports_lazy_sibling_imports(tmp_path: Path) -> None:
+    data = tmp_path / "data"
+    data.mkdir()
+    _write_csv(data / "a.csv", [{"id": 1, "value": 10.0}])
+
+    helper = tmp_path / "helper.py"
+    helper.write_text(
+        "import polars as pl\n\n"
+        "def add_source_flag(df):\n"
+        "    return df.with_columns(pl.lit('lazy').alias('import_mode'))\n",
+        encoding="utf-8",
+    )
+
+    transform_script = tmp_path / "lazy_transform.py"
+    transform_script.write_text(
+        "def transform(df):\n"
+        "    import helper\n"
+        "    return helper.add_source_flag(df)\n",
+        encoding="utf-8",
+    )
+
+    output_dir = tmp_path / "out_with_lazy_helper"
+    result = runner.invoke(
+        app,
+        ["transform", str(data), str(transform_script), str(output_dir)],
+    )
+
+    assert result.exit_code == 0
+    transformed = pl.read_csv(output_dir / "a.csv")
+    assert transformed["import_mode"][0] == "lazy"
+
+
+def test_transform_isolates_same_named_helpers_between_runs(tmp_path: Path) -> None:
+    data = tmp_path / "data"
+    data.mkdir()
+    _write_csv(data / "a.csv", [{"id": 1, "value": 10.0}])
+
+    first_root = tmp_path / "first"
+    first_root.mkdir()
+    (first_root / "helper.py").write_text(
+        "import polars as pl\n\n"
+        "def marker(df):\n"
+        "    return df.with_columns(pl.lit('first').alias('helper_origin'))\n",
+        encoding="utf-8",
+    )
+    first_transform = first_root / "transform.py"
+    first_transform.write_text(
+        "import helper\n\ndef transform(df):\n    return helper.marker(df)\n",
+        encoding="utf-8",
+    )
+
+    second_root = tmp_path / "second"
+    second_root.mkdir()
+    (second_root / "helper.py").write_text(
+        "import polars as pl\n\n"
+        "def marker(df):\n"
+        "    return df.with_columns(pl.lit('second').alias('helper_origin'))\n",
+        encoding="utf-8",
+    )
+    second_transform = second_root / "transform.py"
+    second_transform.write_text(
+        "import helper\n\ndef transform(df):\n    return helper.marker(df)\n",
+        encoding="utf-8",
+    )
+
+    first_output = tmp_path / "out_first"
+    first_result = runner.invoke(
+        app,
+        ["transform", str(data), str(first_transform), str(first_output)],
+    )
+    second_output = tmp_path / "out_second"
+    second_result = runner.invoke(
+        app,
+        ["transform", str(data), str(second_transform), str(second_output)],
+    )
+
+    assert first_result.exit_code == 0
+    assert second_result.exit_code == 0
+
+    first_frame = pl.read_csv(first_output / "a.csv")
+    second_frame = pl.read_csv(second_output / "a.csv")
+    assert first_frame["helper_origin"][0] == "first"
+    assert second_frame["helper_origin"][0] == "second"
