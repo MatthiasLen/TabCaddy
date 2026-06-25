@@ -26,6 +26,7 @@ def render_scatter_chart(
     x_axis_char: str = "─",
     axis_corner_char: str = "└",
     x_tick_formatter: Callable[[float], str] | None = None,
+    y_tick_formatter: Callable[[float], str] | None = None,
 ) -> str:
     outlier_points = outlier_points or ()
     if not points and not outlier_points:
@@ -71,12 +72,19 @@ def render_scatter_chart(
     plot_points(points, point)
     plot_points(outlier_points, outlier_point)
 
-    label_width = max(len(_format_axis(label_min_y)), len(_format_axis(label_max_y)), 6)
+    def _format_y_tick(value: float) -> str:
+        if y_tick_formatter is None:
+            return _format_axis(value)
+        return y_tick_formatter(value)
+
+    label_width = max(
+        len(_format_y_tick(label_min_y)), len(_format_y_tick(label_max_y)), 6
+    )
     lines: list[str] = []
     for index, row in enumerate(grid):
         y_value = label_max_y - (index / (height - 1)) * (label_max_y - label_min_y)
         lines.append(
-            f"{_format_axis(y_value):>{label_width}} {y_axis_char}{''.join(row)}"
+            f"{_format_y_tick(y_value):>{label_width}} {y_axis_char}{''.join(row)}"
         )
 
     lines.append(" " * (label_width + 1) + axis_corner_char + x_axis_char * width)

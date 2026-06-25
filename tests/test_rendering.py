@@ -22,6 +22,7 @@ from tabcaddy.rendering.console import create_console
 from tabcaddy.rendering.console import RenderProfile
 from tabcaddy.rendering.charts.line_chart import _resample_by_x
 from tabcaddy.rendering.charts.line_chart import render_line_chart
+from tabcaddy.rendering.charts.bar_chart import render_bar_chart
 from tabcaddy.rendering.charts.scatter_chart import render_scatter_chart
 from tabcaddy.plot.service import PlotFileResult
 from tabcaddy.plot.service import PlotResult
@@ -361,6 +362,26 @@ def test_scatter_chart_formats_temporal_x_labels_as_utc_dates() -> None:
     assert "2026-02-09" in chart
 
 
+def test_epoch_formatter_accepts_nanosecond_epoch_values() -> None:
+    value_ns = datetime(2026, 2, 7, tzinfo=timezone.utc).timestamp() * 1_000_000_000
+
+    formatted = format_epoch_seconds_utc(value_ns)
+
+    assert "2026-02-07" in formatted
+
+
+def test_scatter_chart_formats_temporal_y_labels_as_utc_dates() -> None:
+    points = [
+        (1.0, datetime(2026, 2, 7, tzinfo=timezone.utc).timestamp()),
+        (2.0, datetime(2026, 2, 9, tzinfo=timezone.utc).timestamp()),
+    ]
+
+    chart = render_scatter_chart(points, y_tick_formatter=format_epoch_seconds_utc)
+
+    assert "2026-02-07" in chart
+    assert "2026-02-09" in chart
+
+
 def test_scatter_chart_uses_box_drawing_axes_by_default() -> None:
     points = [(0.0, 0.0), (1.0, 1.0)]
 
@@ -456,6 +477,162 @@ def test_scatter_chart_single_y_uses_true_axis_labels() -> None:
     assert all(line.startswith("     5 ") for line in y_axis_lines)
     assert "5.5" not in chart
     assert "4.5" not in chart
+
+
+def test_plot_view_histogram_renders_bins_and_metadata() -> None:
+    result = PlotResult(
+        chart_kind="histogram",
+        x_column="value",
+        y_column="value",
+        x_axis_kind="numeric",
+        x_axis_time_unit=None,
+        x_axis_timezone=None,
+        row_count=4,
+        plotted_rows=4,
+        dropped_rows=0,
+        duplicate_x_count=0,
+        sorted_x=False,
+        auto_sorted=False,
+        aggregated=False,
+        line_interpolation=None,
+        histogram_bins=[("1..2", 2), ("2..3", 2)],
+    )
+    run_result = PlotRunResult(
+        plots=[PlotFileResult(path=Path("plot.csv"), result=result)],
+        total_files=1,
+        plotted_files=1,
+        skipped_files=0,
+    )
+
+    console = create_console(record=True, width=100, legacy_windows=False)
+    console.print(build_plot_view(run_result, render=RenderProfile(ascii_only=True)))
+    output = console.export_text()
+
+    assert "histogram" in output
+    assert "Bins" in output
+    assert "1..2" in output
+    assert "Column" in output
+
+
+def test_plot_view_histogram_long_labels_do_not_exceed_console_width() -> None:
+    result = PlotResult(
+        chart_kind="histogram",
+        x_column="DATE",
+        y_column="DATE",
+        x_axis_kind="temporal",
+        x_axis_time_unit="epoch_seconds",
+        x_axis_timezone="UTC",
+        row_count=4,
+        plotted_rows=4,
+        dropped_rows=0,
+        duplicate_x_count=0,
+        sorted_x=False,
+        auto_sorted=False,
+        aggregated=False,
+        line_interpolation=None,
+        histogram_bins=[
+            (
+                "2026-01-01 00:00:00Z..2026-01-07 00:00:00Z very very long caption",
+                2,
+            ),
+            (
+                "2026-01-07 00:00:00Z..2026-01-14 00:00:00Z very very long caption",
+                2,
+            ),
+        ],
+    )
+    run_result = PlotRunResult(
+        plots=[PlotFileResult(path=Path("plot.csv"), result=result)],
+        total_files=1,
+        plotted_files=1,
+        skipped_files=0,
+    )
+
+    console_width = 72
+    console = create_console(record=True, width=console_width, legacy_windows=False)
+    console.print(
+        build_plot_view(
+            run_result,
+            render=RenderProfile(ascii_only=True, console_width=console_width),
+        )
+    )
+    output = console.export_text()
+
+    for line in output.splitlines():
+        assert len(line) <= console_width
+
+
+def test_plot_view_histogram_bars_start_aligned() -> None:
+    result = PlotResult(
+        chart_kind="histogram",
+        x_column="value",
+        y_column="value",
+        x_axis_kind="numeric",
+        x_axis_time_unit=None,
+        x_axis_timezone=None,
+        row_count=6,
+        plotted_rows=6,
+        dropped_rows=0,
+        duplicate_x_count=0,
+        sorted_x=False,
+        auto_sorted=False,
+        aggregated=False,
+        line_interpolation=None,
+        histogram_bins=[("short", 1), ("a much longer bucket caption", 2)],
+    )
+    run_result = PlotRunResult(
+        plots=[PlotFileResult(path=Path("plot.csv"), result=result)],
+        total_files=1,
+        plotted_files=1,
+        skipped_files=0,
+    )
+
+    console = create_console(record=True, width=90, legacy_windows=False)
+    console.print(
+        build_plot_view(
+            run_result,
+            render=RenderProfile(ascii_only=True, console_width=90),
+        )
+    )
+    output = console.export_text()
+
+    bar_lines = [line for line in output.splitlines() if "#" in line]
+    assert len(bar_lines) >= 2
+    bar_starts = {line.index("#") for line in bar_lines}
+    assert len(bar_starts) == 1
+
+
+def test_bar_chart_truncates_long_labels_to_single_line() -> None:
+    items = [
+        (
+            "2026-01-01 00:00:00Z..2026-01-07 00:00:00Z very very long caption",
+            10,
+        ),
+        ("short", 5),
+    ]
+
+    chart = render_bar_chart(items, width=20, fill="#", max_width=60)
+    lines = chart.splitlines()
+
+    assert len(lines) == 2
+    assert all(len(line) <= 60 for line in lines)
+    assert "..." in lines[0]
+    assert "very very long caption" not in lines[0]
+    starts = [line.index("#") for line in lines if "#" in line]
+    assert len(set(starts)) == 1
+
+
+def test_bar_chart_respects_narrow_max_width() -> None:
+    items = [
+        ("very long histogram bucket label", 12345),
+        ("short", 9),
+    ]
+
+    chart = render_bar_chart(items, width=20, fill="#", max_width=8)
+    lines = chart.splitlines()
+
+    assert len(lines) == 2
+    assert all(len(line) <= 8 for line in lines)
 
 
 def test_plot_chart_width_uses_full_width_for_narrow_console() -> None:

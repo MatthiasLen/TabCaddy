@@ -1211,6 +1211,70 @@ def test_plot_filter_accepts_hyphenated_column_names(tmp_path: Path) -> None:
     assert "2" in plotted_rows_line
 
 
+def test_plot_filter_accepts_column_names_with_spaces(tmp_path: Path) -> None:
+    csv_file = tmp_path / "filtered_spaced_column.csv"
+    _write_csv(
+        csv_file,
+        [
+            {"x": 1, "y": 10.0, "part description": "A"},
+            {"x": 2, "y": 20.0, "part description": "B"},
+            {"x": 3, "y": 30.0, "part description": "B"},
+        ],
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "plot",
+            str(csv_file),
+            "x",
+            "y",
+            "--kind",
+            "line",
+            "--filter",
+            'part description=="B"',
+        ],
+    )
+
+    assert result.exit_code == 0
+    plotted_rows_line = next(
+        line for line in result.stdout.splitlines() if "Plotted rows" in line
+    )
+    assert "2" in plotted_rows_line
+
+
+def test_plot_filter_accepts_digit_leading_column_names(tmp_path: Path) -> None:
+    csv_file = tmp_path / "filtered_digit_leading_column.csv"
+    _write_csv(
+        csv_file,
+        [
+            {"x": 1, "y": 10.0, "2026_value": 1},
+            {"x": 2, "y": 20.0, "2026_value": 2},
+            {"x": 3, "y": 30.0, "2026_value": 3},
+        ],
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "plot",
+            str(csv_file),
+            "x",
+            "y",
+            "--kind",
+            "line",
+            "--filter",
+            "2026_value>=2",
+        ],
+    )
+
+    assert result.exit_code == 0
+    plotted_rows_line = next(
+        line for line in result.stdout.splitlines() if "Plotted rows" in line
+    )
+    assert "2" in plotted_rows_line
+
+
 def test_plot_filter_applies_to_multiple_y_columns(tmp_path: Path) -> None:
     csv_file = tmp_path / "filtered_multi_series.csv"
     _write_csv(
@@ -1522,7 +1586,8 @@ def test_plot_folder_renders_stacked_per_file_plots(tmp_path: Path) -> None:
     assert result.exit_code == 0
     assert "Folder Plot Summary" in result.stdout
     assert "File 1: a.csv" in result.stdout
-    assert "File 2: b.csv" in result.stdout
+    assert "File 2: b.csv" not in result.stdout
+    assert "Folder contains 2 files; plotted first 1." in result.stdout
 
 
 def test_plot_folder_skips_invalid_files_and_continues(tmp_path: Path) -> None:
@@ -1537,7 +1602,10 @@ def test_plot_folder_skips_invalid_files_and_continues(tmp_path: Path) -> None:
         [{"x": 1, "other": 20.0}, {"x": 2, "other": 22.0}],
     )
 
-    result = runner.invoke(app, ["plot", str(folder), "x", "y", "--kind", "line"])
+    result = runner.invoke(
+        app,
+        ["plot", str(folder), "x", "y", "--kind", "line", "--n", "2"],
+    )
 
     assert result.exit_code == 0
     assert "Folder Plot Summary" in result.stdout
@@ -1573,9 +1641,9 @@ def test_plot_folder_limits_default_number_of_files(tmp_path: Path) -> None:
     result = runner.invoke(app, ["plot", str(folder), "x", "y", "--kind", "line"])
 
     assert result.exit_code == 0
-    assert "File 5:" in result.stdout
-    assert "File 6:" not in result.stdout
-    assert "Folder contains 7 files; plotted first 5." in result.stdout
+    assert "File 1:" in result.stdout
+    assert "File 2:" not in result.stdout
+    assert "Folder contains 7 files; plotted first 1." in result.stdout
 
 
 def test_plot_folder_respects_custom_file_limit(tmp_path: Path) -> None:
@@ -1625,6 +1693,222 @@ def test_plot_folder_limit_rejects_zero(tmp_path: Path) -> None:
 
     assert result.exit_code == 1
     assert "-n must be greater than or equal to 1." in result.stdout
+    assert "Traceback" not in result.stdout
+
+
+def test_plot_histogram_renders_single_column(tmp_path: Path) -> None:
+    csv_file = tmp_path / "histogram.csv"
+    _write_csv(
+        csv_file,
+        [
+            {"value": 1.0},
+            {"value": 2.0},
+            {"value": 2.5},
+            {"value": 4.0},
+        ],
+    )
+
+    result = runner.invoke(
+        app,
+        ["plot", str(csv_file), "value", "--kind", "histogram"],
+    )
+
+    assert result.exit_code == 0
+    assert "histogram" in result.stdout
+    assert "Bins" in result.stdout
+
+
+def test_plot_histogram_renders_multiple_columns(tmp_path: Path) -> None:
+    csv_file = tmp_path / "histogram_multi.csv"
+    _write_csv(
+        csv_file,
+        [
+            {"a": 1.0, "b": 10.0},
+            {"a": 2.0, "b": 12.0},
+            {"a": 3.0, "b": 14.0},
+        ],
+    )
+
+    result = runner.invoke(
+        app,
+        ["plot", str(csv_file), "a", "b", "--kind", "histogram"],
+    )
+
+    assert result.exit_code == 0
+    assert "a" in result.stdout
+    assert "b" in result.stdout
+    assert "histogram" in result.stdout
+
+
+def test_plot_histogram_rejects_aggregate_option(tmp_path: Path) -> None:
+    csv_file = tmp_path / "histogram_invalid_option.csv"
+    _write_csv(csv_file, [{"value": 1.0}, {"value": 2.0}])
+
+    result = runner.invoke(
+        app,
+        [
+            "plot",
+            str(csv_file),
+            "value",
+            "--kind",
+            "histogram",
+            "--aggregate-x",
+            "mean",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "--aggregate-x is not supported for --kind histogram" in result.stdout
+    assert "Traceback" not in result.stdout
+
+
+def test_plot_histogram_folder_defaults_to_aggregate_history(tmp_path: Path) -> None:
+    folder = tmp_path / "hist_history"
+    folder.mkdir()
+    _write_csv(folder / "01.csv", [{"value": 1.0}, {"value": 2.0}])
+    _write_csv(folder / "02.csv", [{"value": 3.0}, {"value": 4.0}])
+
+    result = runner.invoke(
+        app,
+        ["plot", str(folder), "value", "--kind", "histogram"],
+    )
+
+    assert result.exit_code == 0
+    assert "Folder Plot Summary" not in result.stdout
+    assert "Input rows" in result.stdout
+    assert "4" in result.stdout
+
+
+def test_plot_histogram_folder_with_n_uses_per_file_sections(tmp_path: Path) -> None:
+    folder = tmp_path / "hist_per_file"
+    folder.mkdir()
+    _write_csv(folder / "01.csv", [{"value": 1.0}, {"value": 2.0}])
+    _write_csv(folder / "02.csv", [{"value": 3.0}, {"value": 4.0}])
+
+    result = runner.invoke(
+        app,
+        ["plot", str(folder), "value", "--kind", "histogram", "--n", "2"],
+    )
+
+    assert result.exit_code == 0
+    assert "Folder Plot Summary" in result.stdout
+    assert "File 1: 01.csv" in result.stdout
+    assert "File 2: 02.csv" in result.stdout
+
+
+def test_plot_histogram_folder_skips_missing_column_with_warning(
+    tmp_path: Path,
+) -> None:
+    folder = tmp_path / "hist_mixed"
+    folder.mkdir()
+    _write_csv(folder / "has_value.csv", [{"value": 1.0}, {"value": 2.0}])
+    _write_csv(folder / "missing_value.csv", [{"other": 10.0}, {"other": 11.0}])
+
+    result = runner.invoke(
+        app,
+        ["plot", str(folder), "value", "--kind", "histogram"],
+    )
+
+    assert result.exit_code == 0
+    assert "Skipped 1 file(s) missing column 'value'" in result.stdout
+    assert "missing_value.csv" in result.stdout
+
+
+def test_plot_histogram_folder_fails_when_all_files_missing_column(
+    tmp_path: Path,
+) -> None:
+    folder = tmp_path / "hist_all_missing"
+    folder.mkdir()
+    _write_csv(folder / "a.csv", [{"other": 10.0}])
+    _write_csv(folder / "b.csv", [{"other": 11.0}])
+
+    result = runner.invoke(
+        app,
+        ["plot", str(folder), "value", "--kind", "histogram"],
+    )
+
+    assert result.exit_code == 1
+    assert "Column not found in any folder file: value" in result.stdout
+    assert "Traceback" not in result.stdout
+
+
+def test_plot_histogram_folder_with_n_fails_when_selected_files_missing_column(
+    tmp_path: Path,
+) -> None:
+    folder = tmp_path / "hist_selected_missing"
+    folder.mkdir()
+    _write_csv(folder / "a.csv", [{"other": 10.0}])
+    _write_csv(folder / "b.csv", [{"other": 11.0}])
+
+    result = runner.invoke(
+        app,
+        ["plot", str(folder), "value", "--kind", "histogram", "--n", "2"],
+    )
+
+    assert result.exit_code == 1
+    assert "Column not found in selected folder files: value" in result.stdout
+    assert "Traceback" not in result.stdout
+
+
+def test_plot_histogram_folder_with_n_reports_non_missing_failure_reason(
+    tmp_path: Path,
+) -> None:
+    folder = tmp_path / "hist_selected_unplottable"
+    folder.mkdir()
+    _write_nested_parquet(folder / "a.parquet", [{"v": [1, 2]}, {"v": [3, 4]}])
+    _write_nested_parquet(folder / "b.parquet", [{"v": [5, 6]}, {"v": [7, 8]}])
+
+    result = runner.invoke(
+        app,
+        ["plot", str(folder), "v", "--kind", "histogram", "--n", "2"],
+    )
+
+    assert result.exit_code == 1
+    assert "Unable to build histogram for selected folder files" in result.stdout
+    assert "First failure:" in result.stdout
+    assert "not plottable" in result.stdout
+    assert "Column not found in selected folder files" not in result.stdout
+    assert "Traceback" not in result.stdout
+
+
+def test_plot_histogram_folder_with_n_reports_all_values_dropped_failure(
+    tmp_path: Path,
+) -> None:
+    folder = tmp_path / "hist_selected_unplottable_values"
+    folder.mkdir()
+    _write_csv(folder / "a.csv", [{"v": "a"}, {"v": "b"}])
+    _write_csv(folder / "b.csv", [{"v": "c"}, {"v": "d"}])
+
+    result = runner.invoke(
+        app,
+        ["plot", str(folder), "v", "--kind", "histogram", "--n", "2"],
+    )
+
+    assert result.exit_code == 1
+    assert "Unable to build histogram for selected folder files" in result.stdout
+    assert "No plottable numeric values remain" in result.stdout
+    assert "Column not found in selected folder files" not in result.stdout
+    assert "Traceback" not in result.stdout
+
+
+def test_plot_histogram_folder_fails_when_column_is_unplottable_in_all_files(
+    tmp_path: Path,
+) -> None:
+    folder = tmp_path / "hist_all_unplottable"
+    folder.mkdir()
+    _write_nested_parquet(folder / "a.parquet", [{"v": [1, 2]}, {"v": [3, 4]}])
+    _write_nested_parquet(folder / "b.parquet", [{"v": [5, 6]}, {"v": [7, 8]}])
+
+    result = runner.invoke(
+        app,
+        ["plot", str(folder), "v", "--kind", "histogram"],
+    )
+
+    assert result.exit_code == 1
+    assert (
+        "Column 'v' is present but not plottable in any folder file." in result.stdout
+    )
+    assert "Column not found in any folder file: v" not in result.stdout
     assert "Traceback" not in result.stdout
 
 

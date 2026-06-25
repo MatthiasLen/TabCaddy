@@ -3,7 +3,10 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta, timezone
 
 import polars as pl
+import pytest
 
+from tabcaddy.analysis.sources import resolve_source
+from tabcaddy.plot.filtering import PlotFiltering
 from tabcaddy.plot.service import PlotDataset
 
 
@@ -135,8 +138,154 @@ def test_parse_filter_value_non_datetime_dtype_ignores_non_callable_base_type() 
         def __str__(self) -> str:
             return "FakeNumeric"
 
-    dataset = PlotDataset()
+    filtering = PlotFiltering()
 
-    parsed = dataset._parse_filter_value("42", dtype=FakeDType())  # type: ignore[arg-type]
+    parsed = filtering.parse_value("42", dtype=FakeDType())  # type: ignore[arg-type]
 
     assert parsed == 42
+
+
+def test_build_filter_predicate_keeps_quoted_string_literal_for_string_column() -> None:
+    filtering = PlotFiltering()
+    frame = pl.DataFrame({"code": ["01", "1", "02"], "value": [10, 20, 30]})
+
+    predicate = filtering.build_predicate('code=="01"', schema=frame.schema)
+    filtered = frame.lazy().filter(predicate).collect()
+
+    assert filtered["code"].to_list() == ["01"]
+    assert filtered["value"].to_list() == [10]
+
+
+def test_parse_filter_value_keeps_unquoted_numeric_for_numeric_column() -> None:
+    filtering = PlotFiltering()
+
+    parsed = filtering.parse_value("42", dtype=pl.Int64())
+
+    assert parsed == 42
+
+
+def test_parse_filter_expression_accepts_dotted_column_name() -> None:
+    filtering = PlotFiltering()
+
+    column, operator, raw_value = filtering.parse_expression("a.b>=2")
+
+    assert column == "a.b"
+    assert operator == ">="
+    assert raw_value == "2"
+
+
+def test_parse_filter_expression_accepts_column_with_spaces() -> None:
+    filtering = PlotFiltering()
+
+    column, operator, raw_value = filtering.parse_expression("part description==A")
+
+    assert column == "part description"
+    assert operator == "=="
+    assert raw_value == "A"
+
+
+def test_parse_filter_expression_accepts_leading_digit_column() -> None:
+    filtering = PlotFiltering()
+
+    column, operator, raw_value = filtering.parse_expression("2026_value>=2")
+
+    assert column == "2026_value"
+    assert operator == ">="
+    assert raw_value == "2"
+
+
+def test_parse_filter_expression_accepts_bracket_quoted_column() -> None:
+    filtering = PlotFiltering()
+
+    column, operator, raw_value = filtering.parse_expression("[temp>=setpoint]==1")
+
+    assert column == "temp>=setpoint"
+    assert operator == "=="
+    assert raw_value == "1"
+
+
+def test_parse_filter_expression_rejects_invalid_operator_sequence() -> None:
+    filtering = PlotFiltering()
+
+    with pytest.raises(ValueError, match="Invalid --filter expression"):
+        filtering.parse_expression("current=>0.5")
+
+
+def test_histogram_plot_builds_bins_for_numeric_column() -> None:
+    dataset = PlotDataset()
+    lazyframe = pl.DataFrame({"value": [1.0, 2.0, 3.0, 4.0]}).lazy()
+
+    result = dataset._run_histogram_for_lazyframe(
+        lazyframe,
+        "value",
+        filter_expr=None,
+    )
+
+    assert result.chart_kind == "histogram"
+    assert result.plotted_rows == 4
+    assert result.histogram_bins
+    assert sum(count for _, count in result.histogram_bins) == 4
+
+
+def test_histogram_plot_rejects_non_numeric_column_values() -> None:
+    dataset = PlotDataset()
+    lazyframe = pl.DataFrame({"value": ["a", "b", "c"]}).lazy()
+
+    with pytest.raises(ValueError, match="No plottable numeric values remain"):
+        dataset._run_histogram_for_lazyframe(
+            lazyframe,
+            "value",
+            filter_expr=None,
+        )
+
+
+def test_histogram_plot_formats_temporal_bucket_bounds() -> None:
+    dataset = PlotDataset()
+    lazyframe = pl.DataFrame(
+        {
+            "ts": [
+                datetime(2026, 1, 1, 0, 0, 0),
+                datetime(2026, 1, 2, 0, 0, 0),
+                datetime(2026, 1, 3, 0, 0, 0),
+                datetime(2026, 1, 4, 0, 0, 0),
+            ]
+        }
+    ).lazy()
+
+    result = dataset._run_histogram_for_lazyframe(
+        lazyframe,
+        "ts",
+        filter_expr=None,
+    )
+
+    assert result.chart_kind == "histogram"
+    assert result.x_axis_kind == "temporal"
+    assert result.x_axis_time_unit == "epoch_seconds"
+    assert result.x_axis_timezone == "UTC"
+    assert result.histogram_bins
+    assert any("2026-01" in label for label, _ in result.histogram_bins)
+
+
+def test_histogram_folder_aggregate_reports_skipped_files_for_missing_column(
+    tmp_path,
+) -> None:
+    folder = tmp_path / "hist_mixed"
+    folder.mkdir()
+
+    pl.DataFrame({"value": [1.0, 2.0]}).write_csv(folder / "has_value.csv")
+    pl.DataFrame({"other": [10.0, 11.0]}).write_csv(folder / "missing_value.csv")
+
+    dataset = PlotDataset()
+    result = dataset.run_histogram(
+        resolve_source(folder),
+        "value",
+        filter_expr=None,
+    )
+
+    assert result.total_files == 2
+    assert result.plotted_files == 1
+    assert result.skipped_files == 1
+    assert any(
+        "Skipped 1 file(s) missing column 'value'" in warning
+        for warning in result.plots[0].result.warnings
+    )

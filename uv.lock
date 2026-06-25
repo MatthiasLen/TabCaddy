@@ -1860,11 +1860,10 @@ wheels = [
 
 [[package]]
 name = "tabcaddy"
-version = "0.1.8"
+version = "0.2.0"
 source = { editable = "." }
 dependencies = [
     { name = "asciichartpy" },
-    { name = "benchcaddy" },
     { name = "numpy" },
     { name = "polars" },
     { name = "pyarrow" },
@@ -1879,6 +1878,7 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "benchcaddy" },
     { name = "pre-commit" },
     { name = "pytest" },
 ]
@@ -1886,7 +1886,6 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "asciichartpy", specifier = ">=1.5.25" },
-    { name = "benchcaddy", specifier = ">=0.1.13" },
     { name = "numpy", specifier = ">=2.4.6" },
     { name = "polars", specifier = ">=1.41.2" },
     { name = "pyarrow", specifier = ">=24.0.0" },
@@ -1900,6 +1899,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "benchcaddy", specifier = ">=0.1.13" },
     { name = "pre-commit", specifier = ">=4.2.0" },
     { name = "pytest", specifier = ">=9.0.3" },
 ]

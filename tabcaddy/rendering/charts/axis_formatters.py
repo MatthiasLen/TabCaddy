@@ -18,6 +18,16 @@ def format_epoch_seconds_utc(value: float) -> str:
     if not math.isfinite(value):
         return str(value)
 
+    # Accept common Unix epoch scales so formatting remains stable when
+    # upstream values arrive in milliseconds, microseconds, or nanoseconds.
+    abs_value = abs(value)
+    if abs_value >= 1e17:
+        value /= 1_000_000_000.0
+    elif abs_value >= 1e14:
+        value /= 1_000_000.0
+    elif abs_value >= 1e11:
+        value /= 1_000.0
+
     try:
         dt = datetime.fromtimestamp(value, tz=UTC)
     except (OverflowError, OSError, ValueError):

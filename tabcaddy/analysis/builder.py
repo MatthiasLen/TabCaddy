@@ -26,6 +26,11 @@ from tabcaddy.domain.models import (
     SourceType,
 )
 from tabcaddy.shared.dataset_io import scan_dataframe
+from tabcaddy.shared.histogram import build_histogram_edges
+from tabcaddy.shared.histogram import initialize_histogram_counts
+from tabcaddy.shared.histogram import serialize_histogram
+from tabcaddy.shared.histogram import single_value_histogram
+from tabcaddy.shared.histogram import update_histogram_counts
 from tabcaddy.shared.serialization import analysis_from_dict
 
 
@@ -96,16 +101,6 @@ def _get_temporal_format(dtype: Any) -> str:
     if "Time" in dtype_str:
         return "%H:%M:%S"
     return "%Y-%m-%d"
-
-
-def _format_histogram_bound(value: float) -> str:
-    if math.isnan(value):
-        return "nan"
-    if math.isinf(value):
-        return "inf" if value > 0 else "-inf"
-    if math.isclose(value, round(value), rel_tol=1e-9, abs_tol=1e-9):
-        return str(int(round(value)))
-    return f"{value:.3g}"
 
 
 _DEEP_PROFILE_BATCH_ROWS = 10_000
@@ -383,13 +378,17 @@ class AnalysisBuilder:
                 if not math.isfinite(lower) or not math.isfinite(upper):
                     continue
                 if math.isclose(lower, upper, rel_tol=1e-9, abs_tol=1e-9):
-                    histograms[name] = [
-                        (_format_histogram_bound(lower), non_null_count)
-                    ]
+                    histograms[name] = single_value_histogram(lower, non_null_count)
                     continue
-                bin_count = min(8, max(2, math.ceil(math.sqrt(non_null_count))))
-                histogram_edges[name] = np.linspace(lower, upper, num=bin_count + 1)
-                histogram_counts[name] = np.zeros(bin_count, dtype=np.int64)
+                edges = build_histogram_edges(
+                    lower,
+                    upper,
+                    non_null_count=non_null_count,
+                )
+                if edges is None:
+                    continue
+                histogram_edges[name] = edges
+                histogram_counts[name] = initialize_histogram_counts(edges)
 
         histogram_columns = list(histogram_counts.keys())
         projection = lazyframe.select(
@@ -424,25 +423,14 @@ class AnalysisBuilder:
                     numeric_values = np.asarray(
                         series.cast(pl.Float64).to_numpy(), dtype=float
                     )
-                    finite_values = numeric_values[np.isfinite(numeric_values)]
-                    if finite_values.size == 0:
-                        continue
                     edges = histogram_edges[name]
-                    bucket_indexes = (
-                        np.searchsorted(edges, finite_values, side="right") - 1
-                    )
-                    bucket_indexes = np.clip(bucket_indexes, 0, len(counts) - 1)
-                    counts += np.bincount(bucket_indexes, minlength=len(counts))
+                    used_values = update_histogram_counts(counts, edges, numeric_values)
+                    if used_values == 0:
+                        continue
 
         for name, counts in histogram_counts.items():
             edges = histogram_edges[name]
-            histograms[name] = [
-                (
-                    f"{_format_histogram_bound(float(edges[index]))}..{_format_histogram_bound(float(edges[index + 1]))}",
-                    int(count),
-                )
-                for index, count in enumerate(counts.tolist())
-            ]
+            histograms[name] = serialize_histogram(edges, counts)
         return (
             {name: digest.hexdigest() for name, digest in hash_digests.items()},
             histograms,

@@ -5,9 +5,7 @@ from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 import math
 from pathlib import Path
-import re
-from typing import Any, Literal
-from zoneinfo import ZoneInfo
+from typing import Any, Callable, Literal
 
 import numpy as np
 import polars as pl
@@ -15,33 +13,35 @@ from scipy import stats
 
 from tabcaddy.analysis.sources import iter_dataset_files
 from tabcaddy.domain.models import DatasetSource, SourceType
+from tabcaddy.plot.filtering import PlotFiltering
 from tabcaddy.shared.dataset_io import scan_dataframe, scan_parquet_dataset
+from tabcaddy.shared.histogram import build_numeric_histogram
 
 
 _SUPPORTED_AGGREGATIONS = {"mean", "median", "min", "max", "sum", "count"}
 _NAIVE_UNIX_EPOCH = datetime(1970, 1, 1)
-_DEFAULT_FOLDER_MAX_FILES = 5
 _MIN_OUTLIER_POINTS = 8
 _MIN_BUCKET_POINTS = 6
 _MAX_OUTLIER_BUCKETS = 24
 _ROBUST_Z_THRESHOLD = 3.5
 _EPSILON = 1e-12
-_FILTER_PATTERN = re.compile(
-    r"^\s*([A-Za-z_][A-Za-z0-9_-]*)\s*(==|!=|>=|<=|>|<)\s*(.+?)\s*$"
-)
-_FILTER_OPERATORS = {
-    "==": lambda lhs, rhs: lhs == rhs,
-    "!=": lambda lhs, rhs: lhs != rhs,
-    ">": lambda lhs, rhs: lhs > rhs,
-    ">=": lambda lhs, rhs: lhs >= rhs,
-    "<": lambda lhs, rhs: lhs < rhs,
-    "<=": lambda lhs, rhs: lhs <= rhs,
-}
+
+
+def _format_epoch_seconds_histogram_bound(value: float) -> str:
+    if not math.isfinite(value):
+        return str(value)
+    try:
+        dt = datetime.fromtimestamp(value, tz=UTC)
+    except (OverflowError, OSError, ValueError):
+        return f"{value:.3g}"
+    if dt.hour == 0 and dt.minute == 0 and dt.second == 0 and dt.microsecond == 0:
+        return dt.strftime("%Y-%m-%d")
+    return dt.strftime("%Y-%m-%d %H:%M:%SZ")
 
 
 @dataclass
 class PlotResult:
-    chart_kind: Literal["line", "scatter"]
+    chart_kind: Literal["line", "scatter", "histogram"]
     x_column: str
     y_column: str
     x_axis_kind: Literal["numeric", "temporal", "categorical"]
@@ -60,7 +60,11 @@ class PlotResult:
     scatter_points: list[tuple[float, float]] = field(default_factory=list)
     scatter_inlier_points: list[tuple[float, float]] = field(default_factory=list)
     scatter_outlier_points: list[tuple[float, float]] = field(default_factory=list)
+    histogram_bins: list[tuple[str, int]] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    y_axis_kind: Literal["numeric", "temporal", "categorical"] | None = None
+    y_axis_time_unit: Literal["epoch_seconds"] | None = None
+    y_axis_timezone: Literal["UTC"] | None = None
 
 
 @dataclass
@@ -79,6 +83,9 @@ class PlotRunResult:
 
 
 class PlotDataset:
+    def __init__(self) -> None:
+        self._filtering = PlotFiltering()
+
     def run(
         self,
         source: DatasetSource,
@@ -91,10 +98,10 @@ class PlotDataset:
         line_interpolation: Literal["linear", "nearest"] = "linear",
         fail_on_x_duplicates: bool = False,
         fail_on_unsorted_x: bool = False,
-        folder_max_files: int = _DEFAULT_FOLDER_MAX_FILES,
+        folder_max_files: int | None = None,
         filter_expr: str | None = None,
     ) -> PlotRunResult:
-        if folder_max_files < 1:
+        if folder_max_files is not None and folder_max_files < 1:
             raise ValueError("-n must be greater than or equal to 1.")
 
         if source.source_type == SourceType.FOLDER:
@@ -107,7 +114,7 @@ class PlotDataset:
                 line_interpolation=line_interpolation,
                 fail_on_x_duplicates=fail_on_x_duplicates,
                 fail_on_unsorted_x=fail_on_unsorted_x,
-                folder_max_files=folder_max_files,
+                folder_max_files=1 if folder_max_files is None else folder_max_files,
                 filter_expr=filter_expr,
             )
 
@@ -121,6 +128,47 @@ class PlotDataset:
             line_interpolation=line_interpolation,
             fail_on_x_duplicates=fail_on_x_duplicates,
             fail_on_unsorted_x=fail_on_unsorted_x,
+            filter_expr=filter_expr,
+        )
+
+        return PlotRunResult(
+            plots=[PlotFileResult(path=source.path, result=plot)],
+            total_files=1,
+            plotted_files=1,
+            skipped_files=0,
+        )
+
+    def run_histogram(
+        self,
+        source: DatasetSource,
+        column: str,
+        *,
+        folder_max_files: int | None = None,
+        filter_expr: str | None = None,
+        progress_callback: Callable[[int, int], None] | None = None,
+    ) -> PlotRunResult:
+        if folder_max_files is not None and folder_max_files < 1:
+            raise ValueError("-n must be greater than or equal to 1.")
+
+        if source.source_type == SourceType.FOLDER:
+            if folder_max_files is None:
+                return self._run_histogram_for_folder_aggregate(
+                    source,
+                    column,
+                    filter_expr=filter_expr,
+                    progress_callback=progress_callback,
+                )
+            return self._run_histogram_for_folder(
+                source,
+                column,
+                folder_max_files=folder_max_files,
+                filter_expr=filter_expr,
+            )
+
+        lazyframe = self._build_lazyframe(source)
+        plot = self._run_histogram_for_lazyframe(
+            lazyframe,
+            column,
             filter_expr=filter_expr,
         )
 
@@ -150,7 +198,7 @@ class PlotDataset:
             raise ValueError(f"No supported files found under: {source.path}")
 
         if filter_expr is not None:
-            self._parse_filter_expression(filter_expr)
+            self._filtering.parse_expression(filter_expr)
 
         selected_files = files[:folder_max_files]
         file_results: list[PlotFileResult] = []
@@ -200,6 +248,293 @@ class PlotDataset:
             warnings=warnings,
         )
 
+    def _run_histogram_for_folder_aggregate(
+        self,
+        source: DatasetSource,
+        column: str,
+        *,
+        filter_expr: str | None,
+        progress_callback: Callable[[int, int], None] | None,
+    ) -> PlotRunResult:
+        files = iter_dataset_files(source)
+        if not files:
+            raise ValueError(f"No supported files found under: {source.path}")
+
+        if filter_expr is not None:
+            self._filtering.parse_expression(filter_expr)
+
+        selected_lazyframes: list[pl.LazyFrame] = []
+        missing_column_files: list[str] = []
+        failed_files: list[str] = []
+        column_seen_in_schema = False
+        total_files = len(files)
+        for index, path in enumerate(files, start=1):
+            try:
+                lazyframe = scan_dataframe(path)
+                schema = lazyframe.collect_schema()
+            except (FileNotFoundError, ValueError, pl.exceptions.PolarsError) as error:
+                failed_files.append(f"Skipped {path.name}: {error}")
+                if progress_callback is not None:
+                    progress_callback(index, total_files)
+                continue
+
+            if column not in schema:
+                missing_column_files.append(path.name)
+                if progress_callback is not None:
+                    progress_callback(index, total_files)
+                continue
+
+            column_seen_in_schema = True
+
+            column_dtype = schema[column]
+            if column_dtype.is_nested():
+                failed_files.append(
+                    (
+                        f"Skipped {path.name}: Column '{column}' is not plottable "
+                        f"(nested type: {column_dtype})."
+                    )
+                )
+                if progress_callback is not None:
+                    progress_callback(index, total_files)
+                continue
+
+            selected_lazyframes.append(lazyframe)
+            if progress_callback is not None:
+                progress_callback(index, total_files)
+
+        if not selected_lazyframes:
+            if column_seen_in_schema:
+                raise ValueError(
+                    f"Column '{column}' is present but not plottable in any folder file."
+                )
+            raise ValueError(f"Column not found in any folder file: {column}")
+
+        if len(selected_lazyframes) == 1:
+            combined = selected_lazyframes[0]
+        else:
+            combined = pl.concat(selected_lazyframes, how="diagonal_relaxed")
+
+        plot = self._run_histogram_for_lazyframe(
+            combined,
+            column,
+            filter_expr=filter_expr,
+        )
+
+        warning_messages: list[str] = []
+        if missing_column_files:
+            sample = ", ".join(missing_column_files[:3])
+            remainder = len(missing_column_files) - 3
+            suffix = f", +{remainder} more" if remainder > 0 else ""
+            warning_messages.append(
+                (
+                    f"Skipped {len(missing_column_files)} file(s) missing "
+                    f"column '{column}': {sample}{suffix}."
+                )
+            )
+        if failed_files:
+            warning_messages.append(
+                f"Skipped {len(failed_files)} file(s) due to plotting errors."
+            )
+            warning_messages.extend(failed_files)
+
+        if warning_messages:
+            plot.warnings = warning_messages + plot.warnings
+
+        skipped_files = len(missing_column_files) + len(failed_files)
+
+        return PlotRunResult(
+            plots=[PlotFileResult(path=source.path, result=plot)],
+            total_files=len(files),
+            plotted_files=1,
+            skipped_files=skipped_files,
+            warnings=[],
+        )
+
+    def _run_histogram_for_folder(
+        self,
+        source: DatasetSource,
+        column: str,
+        *,
+        folder_max_files: int,
+        filter_expr: str | None,
+    ) -> PlotRunResult:
+        files = iter_dataset_files(source)
+        if not files:
+            raise ValueError(f"No supported files found under: {source.path}")
+
+        if filter_expr is not None:
+            self._filtering.parse_expression(filter_expr)
+
+        selected_files = files[:folder_max_files]
+        file_results: list[PlotFileResult] = []
+        warnings: list[str] = []
+        failed_files = 0
+        files_with_column = 0
+        first_histogram_failure: str | None = None
+        for path in selected_files:
+            try:
+                lazyframe = scan_dataframe(path)
+                schema = lazyframe.collect_schema()
+                if column not in schema:
+                    failed_files += 1
+                    warnings.append(f"Skipped {path.name}: Column not found: {column}")
+                    continue
+
+                files_with_column += 1
+                result = self._run_histogram_for_lazyframe(
+                    lazyframe,
+                    column,
+                    filter_expr=filter_expr,
+                )
+            except (FileNotFoundError, ValueError, pl.exceptions.PolarsError) as error:
+                failed_files += 1
+                warnings.append(f"Skipped {path.name}: {error}")
+                if files_with_column > 0 and first_histogram_failure is None:
+                    first_histogram_failure = str(error)
+                continue
+
+            file_results.append(PlotFileResult(path=path, result=result))
+
+        capped_files = max(0, len(files) - len(selected_files))
+        skipped_files = capped_files + failed_files
+        if failed_files > 0:
+            warnings.insert(
+                0,
+                f"Skipped {failed_files} file(s) due to plotting errors.",
+            )
+        if capped_files > 0:
+            warnings.append(
+                (
+                    f"Folder contains {len(files)} files; plotted first {len(selected_files)}. "
+                    f"Increase -n to at least {len(files)} to plot all files."
+                )
+            )
+
+        if not file_results:
+            if files_with_column > 0:
+                if first_histogram_failure is not None:
+                    raise ValueError(
+                        (
+                            f"Unable to build histogram for selected folder files and "
+                            f"column '{column}'. First failure: {first_histogram_failure}"
+                        )
+                    )
+                raise ValueError(
+                    (
+                        f"Unable to build histogram for selected folder files and "
+                        f"column '{column}'."
+                    )
+                )
+            raise ValueError(f"Column not found in selected folder files: {column}")
+
+        return PlotRunResult(
+            plots=file_results,
+            total_files=len(files),
+            plotted_files=len(file_results),
+            skipped_files=skipped_files,
+            warnings=warnings,
+        )
+
+    def _run_histogram_for_lazyframe(
+        self,
+        lazyframe: pl.LazyFrame,
+        column: str,
+        *,
+        filter_expr: str | None,
+    ) -> PlotResult:
+        schema = lazyframe.collect_schema()
+        if column not in schema:
+            raise ValueError(f"Column not found: {column}")
+
+        column_dtype = schema[column]
+        if column_dtype.is_nested():
+            raise ValueError(
+                f"Column '{column}' is not plottable (nested type: {column_dtype})."
+            )
+        x_axis_kind, x_axis_time_unit, x_axis_timezone = self._axis_metadata(
+            column_dtype
+        )
+
+        working = lazyframe
+        warnings: list[str] = []
+        if filter_expr is not None:
+            working = lazyframe.filter(
+                self._filtering.build_predicate(filter_expr, schema=schema)
+            )
+
+        frame = working.select([pl.col(column).alias("_value_raw")]).collect(
+            engine="auto"
+        )
+        row_count = frame.height
+
+        raw_values = frame.get_column("_value_raw").to_list()
+        if x_axis_kind == "temporal":
+            converted_values = [self._to_numeric_x(value) for value in raw_values]
+        else:
+            cast_values = (
+                frame.get_column("_value_raw").cast(pl.Float64, strict=False).to_list()
+            )
+            converted_values = [
+                float(value) if value is not None else None for value in cast_values
+            ]
+
+        cast_failed = sum(
+            1
+            for raw_value, converted in zip(raw_values, converted_values, strict=False)
+            if raw_value is not None and converted is None
+        )
+        if cast_failed > 0:
+            warnings.append(
+                (
+                    f"Dropped {cast_failed} rows where '{column}' could not be cast to "
+                    "numeric/temporal values for histogram."
+                )
+            )
+
+        filtered_values = [
+            value
+            for value in converted_values
+            if value is not None and math.isfinite(value)
+        ]
+        plotted_rows = len(filtered_values)
+        dropped_rows = row_count - plotted_rows
+        if plotted_rows == 0:
+            raise ValueError(
+                f"No plottable numeric values remain for histogram column '{column}'."
+            )
+
+        bound_formatter: Callable[[float], str] | None = None
+        if x_axis_time_unit == "epoch_seconds" and x_axis_timezone == "UTC":
+            bound_formatter = _format_epoch_seconds_histogram_bound
+
+        bins = build_numeric_histogram(
+            filtered_values,
+            bound_formatter=bound_formatter,
+        )
+        if not bins:
+            raise ValueError(
+                f"Unable to build histogram for column '{column}' from finite numeric values."
+            )
+
+        return PlotResult(
+            chart_kind="histogram",
+            x_column=column,
+            y_column=column,
+            x_axis_kind=x_axis_kind,
+            x_axis_time_unit=x_axis_time_unit,
+            x_axis_timezone=x_axis_timezone,
+            row_count=row_count,
+            plotted_rows=plotted_rows,
+            dropped_rows=dropped_rows,
+            duplicate_x_count=0,
+            sorted_x=False,
+            auto_sorted=False,
+            aggregated=False,
+            line_interpolation=None,
+            histogram_bins=bins,
+            warnings=warnings,
+        )
+
     def _run_for_lazyframe(
         self,
         lazyframe: pl.LazyFrame,
@@ -218,6 +553,7 @@ class PlotDataset:
             schema, x_column=x_column, y_column=y_column
         )
         x_axis_kind, x_axis_time_unit, x_axis_timezone = self._axis_metadata(x_dtype)
+        y_axis_kind, y_axis_time_unit, y_axis_timezone = self._axis_metadata(y_dtype)
         filtered, row_count, dropped_rows, warnings = self._prepare_plot_frame(
             lazyframe,
             x_column=x_column,
@@ -268,6 +604,9 @@ class PlotDataset:
                 x_axis_kind=x_axis_kind,
                 x_axis_time_unit=x_axis_time_unit,
                 x_axis_timezone=x_axis_timezone,
+                y_axis_kind=y_axis_kind,
+                y_axis_time_unit=y_axis_time_unit,
+                y_axis_timezone=y_axis_timezone,
                 row_count=row_count,
                 dropped_rows=dropped_rows,
                 duplicate_x_count=duplicate_x_count,
@@ -285,6 +624,9 @@ class PlotDataset:
             x_axis_kind=x_axis_kind,
             x_axis_time_unit=x_axis_time_unit,
             x_axis_timezone=x_axis_timezone,
+            y_axis_kind=y_axis_kind,
+            y_axis_time_unit=y_axis_time_unit,
+            y_axis_timezone=y_axis_timezone,
             row_count=row_count,
             dropped_rows=dropped_rows,
             duplicate_x_count=duplicate_x_count,
@@ -386,17 +728,6 @@ class PlotDataset:
                 return False
         return "Duration" in str(dtype)
 
-    def _is_datetime_dtype(self, dtype: pl.DataType) -> bool:
-        if dtype == pl.Datetime:
-            return True
-        base_type = getattr(dtype, "base_type", None)
-        if callable(base_type):
-            try:
-                return base_type() == pl.Datetime
-            except TypeError:
-                return False
-        return "Datetime" in str(dtype)
-
     def _is_time_dtype(self, dtype: pl.DataType) -> bool:
         if dtype == pl.Time:
             return True
@@ -422,7 +753,7 @@ class PlotDataset:
         filtered_lazyframe = lazyframe
         if filter_expr is not None:
             filtered_lazyframe = lazyframe.filter(
-                self._build_filter_predicate(filter_expr, schema=schema)
+                self._filtering.build_predicate(filter_expr, schema=schema)
             )
         y_to_float = self._y_to_float_expr(y_column, y_dtype)
         frame = filtered_lazyframe.select(
@@ -458,108 +789,6 @@ class PlotDataset:
         if y_dtype == pl.Boolean:
             return pl.col(y_column).cast(pl.Int8).cast(pl.Float64)
         return pl.col(y_column).cast(pl.Float64, strict=False)
-
-    def _build_filter_predicate(self, expression: str, *, schema: pl.Schema) -> pl.Expr:
-        column, operator, raw_value = self._parse_filter_expression(expression)
-        if column not in schema:
-            raise ValueError(f"Column not found in --filter: {column}")
-        column_dtype = schema[column]
-        return _FILTER_OPERATORS[operator](
-            pl.col(column),
-            self._parse_filter_value(raw_value, dtype=column_dtype),
-        )
-
-    def _parse_filter_expression(self, expression: str) -> tuple[str, str, str]:
-        match = _FILTER_PATTERN.match(expression)
-        if match is None:
-            raise ValueError(
-                "Invalid --filter expression. Expected format: COLUMN OP VALUE "
-                "with OP in ==, !=, >, >=, <, <=."
-            )
-        return match.group(1), match.group(2), match.group(3)
-
-    def _parse_filter_value(
-        self, value: str, *, dtype: pl.DataType
-    ) -> bool | int | float | str | date | datetime | time:
-        stripped = value.strip()
-        if (
-            len(stripped) >= 2
-            and stripped[0] == stripped[-1]
-            and stripped[0]
-            in {
-                '"',
-                "'",
-            }
-        ):
-            stripped = stripped[1:-1]
-
-        if dtype == pl.Date:
-            try:
-                return date.fromisoformat(stripped)
-            except ValueError as error:
-                raise ValueError(
-                    "Invalid --filter value for Date column. Expected ISO-8601 date "
-                    "(YYYY-MM-DD)."
-                ) from error
-
-        if self._is_time_dtype(dtype):
-            try:
-                parsed_time = time.fromisoformat(stripped)
-            except ValueError as error:
-                raise ValueError(
-                    "Invalid --filter value for Time column. Expected ISO-8601 "
-                    "time (HH:MM[:SS[.ffffff]])."
-                ) from error
-            if parsed_time.tzinfo is not None:
-                raise ValueError(
-                    "Invalid --filter value for Time column. Time literals with "
-                    "timezone offsets are not supported."
-                )
-            return parsed_time
-
-        if self._is_datetime_dtype(dtype):
-            try:
-                parsed = datetime.fromisoformat(stripped)
-            except ValueError as error:
-                raise ValueError(
-                    "Invalid --filter value for Datetime column. Expected ISO-8601 "
-                    "datetime (for example 2026-01-01T12:34:56 or 2026-01-01)."
-                ) from error
-            timezone_name = getattr(dtype, "time_zone", None)
-            if timezone_name:
-                if parsed.tzinfo is None:
-                    if timezone_name == "UTC":
-                        return parsed.replace(tzinfo=UTC)
-                    try:
-                        return parsed.replace(tzinfo=ZoneInfo(timezone_name))
-                    except Exception as error:
-                        raise ValueError(
-                            "Invalid timezone metadata for Datetime filter comparison: "
-                            f"{timezone_name}"
-                        ) from error
-                if timezone_name == "UTC":
-                    return parsed.astimezone(UTC)
-                try:
-                    return parsed.astimezone(ZoneInfo(timezone_name))
-                except Exception as error:
-                    raise ValueError(
-                        "Invalid timezone metadata for Datetime filter comparison: "
-                        f"{timezone_name}"
-                    ) from error
-            if parsed.tzinfo is not None:
-                return parsed.astimezone(UTC).replace(tzinfo=None)
-            return parsed
-
-        lowered = stripped.lower()
-        if lowered in {"true", "false"}:
-            return lowered == "true"
-
-        for parser in (int, float):
-            try:
-                return parser(stripped)
-            except ValueError:
-                continue
-        return stripped
 
     def _auto_kind_warnings(
         self,
@@ -646,6 +875,9 @@ class PlotDataset:
         x_axis_kind: Literal["numeric", "temporal", "categorical"],
         x_axis_time_unit: Literal["epoch_seconds"] | None,
         x_axis_timezone: Literal["UTC"] | None,
+        y_axis_kind: Literal["numeric", "temporal", "categorical"],
+        y_axis_time_unit: Literal["epoch_seconds"] | None,
+        y_axis_timezone: Literal["UTC"] | None,
         row_count: int,
         dropped_rows: int,
         duplicate_x_count: int,
@@ -686,6 +918,9 @@ class PlotDataset:
             line_x_values=line_x_values,
             line_values=line_values,
             warnings=warnings,
+            y_axis_kind=y_axis_kind,
+            y_axis_time_unit=y_axis_time_unit,
+            y_axis_timezone=y_axis_timezone,
         )
 
     def _build_scatter_result(
@@ -698,6 +933,9 @@ class PlotDataset:
         x_axis_kind: Literal["numeric", "temporal", "categorical"],
         x_axis_time_unit: Literal["epoch_seconds"] | None,
         x_axis_timezone: Literal["UTC"] | None,
+        y_axis_kind: Literal["numeric", "temporal", "categorical"],
+        y_axis_time_unit: Literal["epoch_seconds"] | None,
+        y_axis_timezone: Literal["UTC"] | None,
         row_count: int,
         dropped_rows: int,
         duplicate_x_count: int,
@@ -742,6 +980,9 @@ class PlotDataset:
             scatter_inlier_points=scatter_inlier_points,
             scatter_outlier_points=scatter_outlier_points,
             warnings=warnings,
+            y_axis_kind=y_axis_kind,
+            y_axis_time_unit=y_axis_time_unit,
+            y_axis_timezone=y_axis_timezone,
         )
 
     def _duplicate_count(self, frame: pl.DataFrame) -> int:
