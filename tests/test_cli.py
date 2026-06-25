@@ -1871,6 +1871,26 @@ def test_plot_histogram_folder_with_n_reports_non_missing_failure_reason(
     assert "Traceback" not in result.stdout
 
 
+def test_plot_histogram_folder_with_n_reports_all_values_dropped_failure(
+    tmp_path: Path,
+) -> None:
+    folder = tmp_path / "hist_selected_unplottable_values"
+    folder.mkdir()
+    _write_csv(folder / "a.csv", [{"v": "a"}, {"v": "b"}])
+    _write_csv(folder / "b.csv", [{"v": "c"}, {"v": "d"}])
+
+    result = runner.invoke(
+        app,
+        ["plot", str(folder), "v", "--kind", "histogram", "--n", "2"],
+    )
+
+    assert result.exit_code == 1
+    assert "Unable to build histogram for selected folder files" in result.stdout
+    assert "No plottable numeric values remain" in result.stdout
+    assert "Column not found in selected folder files" not in result.stdout
+    assert "Traceback" not in result.stdout
+
+
 def test_plot_histogram_folder_fails_when_column_is_unplottable_in_all_files(
     tmp_path: Path,
 ) -> None:

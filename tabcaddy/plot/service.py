@@ -369,8 +369,8 @@ class PlotDataset:
         file_results: list[PlotFileResult] = []
         warnings: list[str] = []
         failed_files = 0
-        column_seen_in_schema = False
-        histogram_failure_messages: list[str] = []
+        files_with_column = 0
+        first_histogram_failure: str | None = None
         for path in selected_files:
             try:
                 lazyframe = scan_dataframe(path)
@@ -380,7 +380,7 @@ class PlotDataset:
                     warnings.append(f"Skipped {path.name}: Column not found: {column}")
                     continue
 
-                column_seen_in_schema = True
+                files_with_column += 1
                 result = self._run_histogram_for_lazyframe(
                     lazyframe,
                     column,
@@ -389,8 +389,8 @@ class PlotDataset:
             except (FileNotFoundError, ValueError, pl.exceptions.PolarsError) as error:
                 failed_files += 1
                 warnings.append(f"Skipped {path.name}: {error}")
-                if column_seen_in_schema:
-                    histogram_failure_messages.append(str(error))
+                if files_with_column > 0 and first_histogram_failure is None:
+                    first_histogram_failure = str(error)
                 continue
 
             file_results.append(PlotFileResult(path=path, result=result))
@@ -411,13 +411,12 @@ class PlotDataset:
             )
 
         if not file_results:
-            if column_seen_in_schema:
-                if histogram_failure_messages:
+            if files_with_column > 0:
+                if first_histogram_failure is not None:
                     raise ValueError(
                         (
                             f"Unable to build histogram for selected folder files and "
-                            f"column '{column}'. First failure: "
-                            f"{histogram_failure_messages[0]}"
+                            f"column '{column}'. First failure: {first_histogram_failure}"
                         )
                     )
                 raise ValueError(
