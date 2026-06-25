@@ -797,6 +797,9 @@ class PlotDataset:
         ):
             stripped = stripped[1:-1]
 
+        if self._is_string_like_dtype(dtype):
+            return stripped
+
         if dtype == pl.Date:
             try:
                 return date.fromisoformat(stripped)
@@ -853,6 +856,30 @@ class PlotDataset:
             if parsed.tzinfo is not None:
                 return parsed.astimezone(UTC).replace(tzinfo=None)
             return parsed
+
+        if dtype == pl.Boolean:
+            lowered = stripped.lower()
+            if lowered in {"true", "false"}:
+                return lowered == "true"
+            raise ValueError(
+                "Invalid --filter value for Boolean column. Expected true or false."
+            )
+
+        if self._is_numeric_dtype(dtype):
+            if "Decimal" in str(dtype):
+                try:
+                    return Decimal(stripped)
+                except Exception:
+                    # Fall back to integer/float parsing for compatibility.
+                    pass
+            for parser in (int, float):
+                try:
+                    return parser(stripped)
+                except ValueError:
+                    continue
+            raise ValueError(
+                "Invalid --filter value for numeric column. Expected a numeric literal."
+            )
 
         lowered = stripped.lower()
         if lowered in {"true", "false"}:
@@ -1266,4 +1293,20 @@ class PlotDataset:
             return bool(probe)
         return any(
             token in str(dtype) for token in ("Date", "Datetime", "Time", "Duration")
+        )
+
+    def _is_string_like_dtype(self, dtype: pl.DataType) -> bool:
+        probe = getattr(dtype, "is_string", None)
+        if callable(probe):
+            return bool(probe())
+        if probe is not None:
+            return bool(probe)
+        return any(
+            token in str(dtype)
+            for token in (
+                "String",
+                "Utf8",
+                "Categorical",
+                "Enum",
+            )
         )

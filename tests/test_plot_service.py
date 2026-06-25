@@ -143,6 +143,25 @@ def test_parse_filter_value_non_datetime_dtype_ignores_non_callable_base_type() 
     assert parsed == 42
 
 
+def test_build_filter_predicate_keeps_quoted_string_literal_for_string_column() -> None:
+    dataset = PlotDataset()
+    frame = pl.DataFrame({"code": ["01", "1", "02"], "value": [10, 20, 30]})
+
+    predicate = dataset._build_filter_predicate('code=="01"', schema=frame.schema)
+    filtered = frame.lazy().filter(predicate).collect()
+
+    assert filtered["code"].to_list() == ["01"]
+    assert filtered["value"].to_list() == [10]
+
+
+def test_parse_filter_value_keeps_unquoted_numeric_for_numeric_column() -> None:
+    dataset = PlotDataset()
+
+    parsed = dataset._parse_filter_value("42", dtype=pl.Int64())
+
+    assert parsed == 42
+
+
 def test_histogram_plot_builds_bins_for_numeric_column() -> None:
     dataset = PlotDataset()
     lazyframe = pl.DataFrame({"value": [1.0, 2.0, 3.0, 4.0]}).lazy()
