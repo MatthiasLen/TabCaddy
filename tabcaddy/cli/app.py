@@ -392,7 +392,7 @@ def plot(
         "--filter",
         help=(
             "Optional row filter in the form COLUMN OP VALUE, for example "
-            "'CURRENT>0.5' or \"STATUS==OK\"."
+            "'CURRENT>0.5', 'part description==OK', or '[temp>=setpoint]==1'."
         ),
     ),
 ) -> None:

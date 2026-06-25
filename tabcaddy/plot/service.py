@@ -5,9 +5,7 @@ from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 import math
 from pathlib import Path
-import re
 from typing import Any, Callable, Literal
-from zoneinfo import ZoneInfo
 
 import numpy as np
 import polars as pl
@@ -15,6 +13,7 @@ from scipy import stats
 
 from tabcaddy.analysis.sources import iter_dataset_files
 from tabcaddy.domain.models import DatasetSource, SourceType
+from tabcaddy.plot.filtering import PlotFiltering
 from tabcaddy.shared.dataset_io import scan_dataframe, scan_parquet_dataset
 from tabcaddy.shared.histogram import build_numeric_histogram
 
@@ -26,17 +25,6 @@ _MIN_BUCKET_POINTS = 6
 _MAX_OUTLIER_BUCKETS = 24
 _ROBUST_Z_THRESHOLD = 3.5
 _EPSILON = 1e-12
-_FILTER_PATTERN = re.compile(
-    r"^\s*([A-Za-z_][A-Za-z0-9_.-]*)\s*(==|!=|>=|<=|>|<)\s*(.+?)\s*$"
-)
-_FILTER_OPERATORS = {
-    "==": lambda lhs, rhs: lhs == rhs,
-    "!=": lambda lhs, rhs: lhs != rhs,
-    ">": lambda lhs, rhs: lhs > rhs,
-    ">=": lambda lhs, rhs: lhs >= rhs,
-    "<": lambda lhs, rhs: lhs < rhs,
-    "<=": lambda lhs, rhs: lhs <= rhs,
-}
 
 
 def _format_epoch_seconds_histogram_bound(value: float) -> str:
@@ -92,6 +80,9 @@ class PlotRunResult:
 
 
 class PlotDataset:
+    def __init__(self) -> None:
+        self._filtering = PlotFiltering()
+
     def run(
         self,
         source: DatasetSource,
@@ -204,7 +195,7 @@ class PlotDataset:
             raise ValueError(f"No supported files found under: {source.path}")
 
         if filter_expr is not None:
-            self._parse_filter_expression(filter_expr)
+            self._filtering.parse_expression(filter_expr)
 
         selected_files = files[:folder_max_files]
         file_results: list[PlotFileResult] = []
@@ -267,7 +258,7 @@ class PlotDataset:
             raise ValueError(f"No supported files found under: {source.path}")
 
         if filter_expr is not None:
-            self._parse_filter_expression(filter_expr)
+            self._filtering.parse_expression(filter_expr)
 
         selected_lazyframes: list[pl.LazyFrame] = []
         missing_column_files: list[str] = []
@@ -369,7 +360,7 @@ class PlotDataset:
             raise ValueError(f"No supported files found under: {source.path}")
 
         if filter_expr is not None:
-            self._parse_filter_expression(filter_expr)
+            self._filtering.parse_expression(filter_expr)
 
         selected_files = files[:folder_max_files]
         file_results: list[PlotFileResult] = []
@@ -440,7 +431,7 @@ class PlotDataset:
         warnings: list[str] = []
         if filter_expr is not None:
             working = lazyframe.filter(
-                self._build_filter_predicate(filter_expr, schema=schema)
+                self._filtering.build_predicate(filter_expr, schema=schema)
             )
 
         frame = working.select([pl.col(column).alias("_value_raw")]).collect(
@@ -702,17 +693,6 @@ class PlotDataset:
                 return False
         return "Duration" in str(dtype)
 
-    def _is_datetime_dtype(self, dtype: pl.DataType) -> bool:
-        if dtype == pl.Datetime:
-            return True
-        base_type = getattr(dtype, "base_type", None)
-        if callable(base_type):
-            try:
-                return base_type() == pl.Datetime
-            except TypeError:
-                return False
-        return "Datetime" in str(dtype)
-
     def _is_time_dtype(self, dtype: pl.DataType) -> bool:
         if dtype == pl.Time:
             return True
@@ -738,7 +718,7 @@ class PlotDataset:
         filtered_lazyframe = lazyframe
         if filter_expr is not None:
             filtered_lazyframe = lazyframe.filter(
-                self._build_filter_predicate(filter_expr, schema=schema)
+                self._filtering.build_predicate(filter_expr, schema=schema)
             )
         y_to_float = self._y_to_float_expr(y_column, y_dtype)
         frame = filtered_lazyframe.select(
@@ -774,135 +754,6 @@ class PlotDataset:
         if y_dtype == pl.Boolean:
             return pl.col(y_column).cast(pl.Int8).cast(pl.Float64)
         return pl.col(y_column).cast(pl.Float64, strict=False)
-
-    def _build_filter_predicate(self, expression: str, *, schema: pl.Schema) -> pl.Expr:
-        column, operator, raw_value = self._parse_filter_expression(expression)
-        if column not in schema:
-            raise ValueError(f"Column not found in --filter: {column}")
-        column_dtype = schema[column]
-        return _FILTER_OPERATORS[operator](
-            pl.col(column),
-            self._parse_filter_value(raw_value, dtype=column_dtype),
-        )
-
-    def _parse_filter_expression(self, expression: str) -> tuple[str, str, str]:
-        match = _FILTER_PATTERN.match(expression)
-        if match is None:
-            raise ValueError(
-                "Invalid --filter expression. Expected format: COLUMN OP VALUE "
-                "with OP in ==, !=, >, >=, <, <=."
-            )
-        return match.group(1), match.group(2), match.group(3)
-
-    def _parse_filter_value(
-        self, value: str, *, dtype: pl.DataType
-    ) -> bool | int | float | str | date | datetime | time:
-        stripped = value.strip()
-        if (
-            len(stripped) >= 2
-            and stripped[0] == stripped[-1]
-            and stripped[0]
-            in {
-                '"',
-                "'",
-            }
-        ):
-            stripped = stripped[1:-1]
-
-        if self._is_string_like_dtype(dtype):
-            return stripped
-
-        if dtype == pl.Date:
-            try:
-                return date.fromisoformat(stripped)
-            except ValueError as error:
-                raise ValueError(
-                    "Invalid --filter value for Date column. Expected ISO-8601 date "
-                    "(YYYY-MM-DD)."
-                ) from error
-
-        if self._is_time_dtype(dtype):
-            try:
-                parsed_time = time.fromisoformat(stripped)
-            except ValueError as error:
-                raise ValueError(
-                    "Invalid --filter value for Time column. Expected ISO-8601 "
-                    "time (HH:MM[:SS[.ffffff]])."
-                ) from error
-            if parsed_time.tzinfo is not None:
-                raise ValueError(
-                    "Invalid --filter value for Time column. Time literals with "
-                    "timezone offsets are not supported."
-                )
-            return parsed_time
-
-        if self._is_datetime_dtype(dtype):
-            try:
-                parsed = datetime.fromisoformat(stripped)
-            except ValueError as error:
-                raise ValueError(
-                    "Invalid --filter value for Datetime column. Expected ISO-8601 "
-                    "datetime (for example 2026-01-01T12:34:56 or 2026-01-01)."
-                ) from error
-            timezone_name = getattr(dtype, "time_zone", None)
-            if timezone_name:
-                if parsed.tzinfo is None:
-                    if timezone_name == "UTC":
-                        return parsed.replace(tzinfo=UTC)
-                    try:
-                        return parsed.replace(tzinfo=ZoneInfo(timezone_name))
-                    except Exception as error:
-                        raise ValueError(
-                            "Invalid timezone metadata for Datetime filter comparison: "
-                            f"{timezone_name}"
-                        ) from error
-                if timezone_name == "UTC":
-                    return parsed.astimezone(UTC)
-                try:
-                    return parsed.astimezone(ZoneInfo(timezone_name))
-                except Exception as error:
-                    raise ValueError(
-                        "Invalid timezone metadata for Datetime filter comparison: "
-                        f"{timezone_name}"
-                    ) from error
-            if parsed.tzinfo is not None:
-                return parsed.astimezone(UTC).replace(tzinfo=None)
-            return parsed
-
-        if dtype == pl.Boolean:
-            lowered = stripped.lower()
-            if lowered in {"true", "false"}:
-                return lowered == "true"
-            raise ValueError(
-                "Invalid --filter value for Boolean column. Expected true or false."
-            )
-
-        if self._is_numeric_dtype(dtype):
-            if "Decimal" in str(dtype):
-                try:
-                    return Decimal(stripped)
-                except Exception:
-                    # Fall back to integer/float parsing for compatibility.
-                    pass
-            for parser in (int, float):
-                try:
-                    return parser(stripped)
-                except ValueError:
-                    continue
-            raise ValueError(
-                "Invalid --filter value for numeric column. Expected a numeric literal."
-            )
-
-        lowered = stripped.lower()
-        if lowered in {"true", "false"}:
-            return lowered == "true"
-
-        for parser in (int, float):
-            try:
-                return parser(stripped)
-            except ValueError:
-                continue
-        return stripped
 
     def _auto_kind_warnings(
         self,
@@ -1305,20 +1156,4 @@ class PlotDataset:
             return bool(probe)
         return any(
             token in str(dtype) for token in ("Date", "Datetime", "Time", "Duration")
-        )
-
-    def _is_string_like_dtype(self, dtype: pl.DataType) -> bool:
-        probe = getattr(dtype, "is_string", None)
-        if callable(probe):
-            return bool(probe())
-        if probe is not None:
-            return bool(probe)
-        return any(
-            token in str(dtype)
-            for token in (
-                "String",
-                "Utf8",
-                "Categorical",
-                "Enum",
-            )
         )

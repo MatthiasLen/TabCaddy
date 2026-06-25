@@ -6,6 +6,7 @@ import polars as pl
 import pytest
 
 from tabcaddy.analysis.sources import resolve_source
+from tabcaddy.plot.filtering import PlotFiltering
 from tabcaddy.plot.service import PlotDataset
 
 
@@ -137,18 +138,18 @@ def test_parse_filter_value_non_datetime_dtype_ignores_non_callable_base_type() 
         def __str__(self) -> str:
             return "FakeNumeric"
 
-    dataset = PlotDataset()
+    filtering = PlotFiltering()
 
-    parsed = dataset._parse_filter_value("42", dtype=FakeDType())  # type: ignore[arg-type]
+    parsed = filtering.parse_value("42", dtype=FakeDType())  # type: ignore[arg-type]
 
     assert parsed == 42
 
 
 def test_build_filter_predicate_keeps_quoted_string_literal_for_string_column() -> None:
-    dataset = PlotDataset()
+    filtering = PlotFiltering()
     frame = pl.DataFrame({"code": ["01", "1", "02"], "value": [10, 20, 30]})
 
-    predicate = dataset._build_filter_predicate('code=="01"', schema=frame.schema)
+    predicate = filtering.build_predicate('code=="01"', schema=frame.schema)
     filtered = frame.lazy().filter(predicate).collect()
 
     assert filtered["code"].to_list() == ["01"]
@@ -156,21 +157,58 @@ def test_build_filter_predicate_keeps_quoted_string_literal_for_string_column() 
 
 
 def test_parse_filter_value_keeps_unquoted_numeric_for_numeric_column() -> None:
-    dataset = PlotDataset()
+    filtering = PlotFiltering()
 
-    parsed = dataset._parse_filter_value("42", dtype=pl.Int64())
+    parsed = filtering.parse_value("42", dtype=pl.Int64())
 
     assert parsed == 42
 
 
 def test_parse_filter_expression_accepts_dotted_column_name() -> None:
-    dataset = PlotDataset()
+    filtering = PlotFiltering()
 
-    column, operator, raw_value = dataset._parse_filter_expression("a.b>=2")
+    column, operator, raw_value = filtering.parse_expression("a.b>=2")
 
     assert column == "a.b"
     assert operator == ">="
     assert raw_value == "2"
+
+
+def test_parse_filter_expression_accepts_column_with_spaces() -> None:
+    filtering = PlotFiltering()
+
+    column, operator, raw_value = filtering.parse_expression("part description==A")
+
+    assert column == "part description"
+    assert operator == "=="
+    assert raw_value == "A"
+
+
+def test_parse_filter_expression_accepts_leading_digit_column() -> None:
+    filtering = PlotFiltering()
+
+    column, operator, raw_value = filtering.parse_expression("2026_value>=2")
+
+    assert column == "2026_value"
+    assert operator == ">="
+    assert raw_value == "2"
+
+
+def test_parse_filter_expression_accepts_bracket_quoted_column() -> None:
+    filtering = PlotFiltering()
+
+    column, operator, raw_value = filtering.parse_expression("[temp>=setpoint]==1")
+
+    assert column == "temp>=setpoint"
+    assert operator == "=="
+    assert raw_value == "1"
+
+
+def test_parse_filter_expression_rejects_invalid_operator_sequence() -> None:
+    filtering = PlotFiltering()
+
+    with pytest.raises(ValueError, match="Invalid --filter expression"):
+        filtering.parse_expression("current=>0.5")
 
 
 def test_histogram_plot_builds_bins_for_numeric_column() -> None:

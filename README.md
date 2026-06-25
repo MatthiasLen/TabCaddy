@@ -188,7 +188,7 @@ Plots columns in the terminal as line, scatter, or histogram charts.
 - `y` in line/scatter: one or more y-columns; each must be numeric, boolean (`true=1`, `false=0`), or castable to `Float64`; strings and nested types are not supported
 - `--kind auto` picks `line` for temporal `x` only when x-values are unique; if temporal duplicates exist it picks `scatter`; for numeric `x`, it picks `line` only when values are monotonic and unique; otherwise it picks `scatter`
 - `--kind histogram` is explicit (not auto-selected) and uses the same numeric histogram policy as deep summary profiling
-- `--filter` takes a single expression argument, for example `--filter "event_date >= 2026-01-01"`; `OP` must be one of `==`, `!=`, `>`, `>=`, `<`, `<=`
+- `--filter` takes a single expression argument, for example `--filter "event_date>=2026-01-01"`; `OP` must be one of `==`, `!=`, `>`, `>=`, `<`, `<=`; column names may include spaces and digits (for example `part description==A`, `2026_value>=2`), and column names containing operator characters must be wrapped in brackets (for example `[temp>=setpoint]==1`)
 - for temporal columns, use ISO-8601 literals: `Date` uses `YYYY-MM-DD`; `Datetime` uses `YYYY-MM-DDTHH:MM:SS` (timezone accepted when present)
 - `--interpolation` controls line rendering interpolation; defaults to `linear` and also supports `nearest`
 - line plots fail on duplicate `x` by default unless `--aggregate-x` is provided
