@@ -6,7 +6,7 @@ from decimal import Decimal
 import math
 from pathlib import Path
 import re
-from typing import Any, Literal
+from typing import Any, Callable, Literal
 from zoneinfo import ZoneInfo
 
 import numpy as np
@@ -38,6 +38,18 @@ _FILTER_OPERATORS = {
     "<": lambda lhs, rhs: lhs < rhs,
     "<=": lambda lhs, rhs: lhs <= rhs,
 }
+
+
+def _format_epoch_seconds_histogram_bound(value: float) -> str:
+    if not math.isfinite(value):
+        return str(value)
+    try:
+        dt = datetime.fromtimestamp(value, tz=UTC)
+    except (OverflowError, OSError, ValueError):
+        return f"{value:.3g}"
+    if dt.hour == 0 and dt.minute == 0 and dt.second == 0 and dt.microsecond == 0:
+        return dt.strftime("%Y-%m-%d")
+    return dt.strftime("%Y-%m-%d %H:%M:%SZ")
 
 
 @dataclass
@@ -308,6 +320,9 @@ class PlotDataset:
             raise ValueError(
                 f"Column '{column}' is not plottable (nested type: {column_dtype})."
             )
+        x_axis_kind, x_axis_time_unit, x_axis_timezone = self._axis_metadata(
+            column_dtype
+        )
 
         working = lazyframe
         warnings: list[str] = []
@@ -316,36 +331,55 @@ class PlotDataset:
                 self._build_filter_predicate(filter_expr, schema=schema)
             )
 
-        frame = working.select(
-            [
-                pl.col(column).alias("_value_raw"),
-                pl.col(column).cast(pl.Float64, strict=False).alias("_value"),
-            ]
-        ).collect(engine="auto")
+        frame = working.select([pl.col(column).alias("_value_raw")]).collect(
+            engine="auto"
+        )
         row_count = frame.height
 
-        cast_failed = frame.filter(
-            pl.col("_value_raw").is_not_null() & pl.col("_value").is_null()
-        ).height
+        raw_values = frame.get_column("_value_raw").to_list()
+        if x_axis_kind == "temporal":
+            converted_values = [self._to_numeric_x(value) for value in raw_values]
+        else:
+            cast_values = (
+                frame.get_column("_value_raw").cast(pl.Float64, strict=False).to_list()
+            )
+            converted_values = [
+                float(value) if value is not None else None for value in cast_values
+            ]
+
+        cast_failed = sum(
+            1
+            for raw_value, converted in zip(raw_values, converted_values, strict=False)
+            if raw_value is not None and converted is None
+        )
         if cast_failed > 0:
             warnings.append(
                 (
                     f"Dropped {cast_failed} rows where '{column}' could not be cast to "
-                    "numeric for histogram."
+                    "numeric/temporal values for histogram."
                 )
             )
 
-        filtered = frame.filter(
-            pl.col("_value").is_not_null() & pl.col("_value").is_finite()
-        )
-        plotted_rows = filtered.height
+        filtered_values = [
+            value
+            for value in converted_values
+            if value is not None and math.isfinite(value)
+        ]
+        plotted_rows = len(filtered_values)
         dropped_rows = row_count - plotted_rows
         if plotted_rows == 0:
             raise ValueError(
                 f"No plottable numeric values remain for histogram column '{column}'."
             )
 
-        bins = build_numeric_histogram(filtered.get_column("_value").to_numpy())
+        bound_formatter: Callable[[float], str] | None = None
+        if x_axis_time_unit == "epoch_seconds" and x_axis_timezone == "UTC":
+            bound_formatter = _format_epoch_seconds_histogram_bound
+
+        bins = build_numeric_histogram(
+            filtered_values,
+            bound_formatter=bound_formatter,
+        )
         if not bins:
             raise ValueError(
                 f"Unable to build histogram for column '{column}' from finite numeric values."
@@ -355,9 +389,9 @@ class PlotDataset:
             chart_kind="histogram",
             x_column=column,
             y_column=column,
-            x_axis_kind="numeric",
-            x_axis_time_unit=None,
-            x_axis_timezone=None,
+            x_axis_kind=x_axis_kind,
+            x_axis_time_unit=x_axis_time_unit,
+            x_axis_timezone=x_axis_timezone,
             row_count=row_count,
             plotted_rows=plotted_rows,
             dropped_rows=dropped_rows,

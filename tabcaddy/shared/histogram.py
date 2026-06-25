@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 import math
 
 import numpy as np
@@ -75,19 +75,28 @@ def update_histogram_counts(
     return int(finite_values.size)
 
 
-def single_value_histogram(value: float, count: int) -> list[tuple[str, int]]:
-    return [(format_histogram_bound(value), int(count))]
+def single_value_histogram(
+    value: float,
+    count: int,
+    *,
+    bound_formatter: Callable[[float], str] | None = None,
+) -> list[tuple[str, int]]:
+    formatter = bound_formatter or format_histogram_bound
+    return [(formatter(value), int(count))]
 
 
 def serialize_histogram(
     edges: np.ndarray,
     counts: np.ndarray,
+    *,
+    bound_formatter: Callable[[float], str] | None = None,
 ) -> list[tuple[str, int]]:
     if len(edges) != len(counts) + 1:
         raise ValueError("Histogram edges/counts shape mismatch.")
+    formatter = bound_formatter or format_histogram_bound
     return [
         (
-            f"{format_histogram_bound(float(edges[index]))}..{format_histogram_bound(float(edges[index + 1]))}",
+            f"{formatter(float(edges[index]))}..{formatter(float(edges[index + 1]))}",
             int(count),
         )
         for index, count in enumerate(counts.tolist())
@@ -99,6 +108,7 @@ def build_numeric_histogram(
     *,
     min_bins: int = _DEFAULT_MIN_BINS,
     max_bins: int = _DEFAULT_MAX_BINS,
+    bound_formatter: Callable[[float], str] | None = None,
 ) -> list[tuple[str, int]]:
     numeric_values = np.asarray(values, dtype=float)
     finite_values = numeric_values[np.isfinite(numeric_values)]
@@ -108,7 +118,11 @@ def build_numeric_histogram(
     lower = float(np.min(finite_values))
     upper = float(np.max(finite_values))
     if math.isclose(lower, upper, rel_tol=1e-9, abs_tol=1e-9):
-        return single_value_histogram(lower, int(finite_values.size))
+        return single_value_histogram(
+            lower,
+            int(finite_values.size),
+            bound_formatter=bound_formatter,
+        )
 
     edges = build_histogram_edges(
         lower,
@@ -121,4 +135,4 @@ def build_numeric_histogram(
         return []
     counts = initialize_histogram_counts(edges)
     update_histogram_counts(counts, edges, finite_values)
-    return serialize_histogram(edges, counts)
+    return serialize_histogram(edges, counts, bound_formatter=bound_formatter)

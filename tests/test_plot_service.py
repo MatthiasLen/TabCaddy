@@ -169,3 +169,30 @@ def test_histogram_plot_rejects_non_numeric_column_values() -> None:
             "value",
             filter_expr=None,
         )
+
+
+def test_histogram_plot_formats_temporal_bucket_bounds() -> None:
+    dataset = PlotDataset()
+    lazyframe = pl.DataFrame(
+        {
+            "ts": [
+                datetime(2026, 1, 1, 0, 0, 0),
+                datetime(2026, 1, 2, 0, 0, 0),
+                datetime(2026, 1, 3, 0, 0, 0),
+                datetime(2026, 1, 4, 0, 0, 0),
+            ]
+        }
+    ).lazy()
+
+    result = dataset._run_histogram_for_lazyframe(
+        lazyframe,
+        "ts",
+        filter_expr=None,
+    )
+
+    assert result.chart_kind == "histogram"
+    assert result.x_axis_kind == "temporal"
+    assert result.x_axis_time_unit == "epoch_seconds"
+    assert result.x_axis_timezone == "UTC"
+    assert result.histogram_bins
+    assert any("2026-01" in label for label, _ in result.histogram_bins)

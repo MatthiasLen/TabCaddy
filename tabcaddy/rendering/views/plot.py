@@ -334,7 +334,10 @@ def _build_single_plot_view(
     elif result.chart_kind == "histogram":
         fill = "#" if render.ascii_only else "█"
         chart = render_bar_chart(
-            result.histogram_bins, width=max(8, chart_width - 20), fill=fill
+            result.histogram_bins,
+            width=max(8, chart_width - 20),
+            fill=fill,
+            max_width=chart_width,
         )
     else:
         chart = render_scatter_chart(
