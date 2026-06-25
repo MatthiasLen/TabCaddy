@@ -5,6 +5,7 @@ import importlib.util
 import inspect
 import os
 import sys
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
@@ -27,6 +28,8 @@ class TransformContext:
 
 
 class TransformLoader:
+    _IMPORT_STATE_LOCK = threading.RLock()
+
     def load(self, path: Path) -> tuple[Callable[..., Any], bool]:
         module, transform_root = self._load_module(path)
         transform = getattr(module, "transform", None)
@@ -71,57 +74,58 @@ class TransformLoader:
         if spec is None or spec.loader is None:
             raise ValueError(f"Unable to load transform module: {path}")
 
-        local_names = self._discover_local_import_names(transform_root)
-        self._evict_conflicting_modules(local_names, transform_root)
-
-        module = importlib.util.module_from_spec(spec)
-        transform_dir = str(transform_root)
-        module_names_before = set(sys.modules)
-        added_to_path = False
-        if transform_dir not in sys.path:
-            sys.path.insert(0, transform_dir)
-            added_to_path = True
-
-        sys.modules[module_name] = module
-        try:
-            spec.loader.exec_module(module)
-        except Exception:
-            sys.modules.pop(module_name, None)
-            raise
-        finally:
-            if added_to_path and transform_dir in sys.path:
-                sys.path.remove(transform_dir)
-
-        self._purge_new_local_modules(
-            module_names_before=module_names_before,
-            transform_root=transform_root,
-            exclude_names={module_name},
-        )
-        return module, transform_root
-
-    def _with_transform_path(
-        self, transform: Callable[..., Any], transform_root: Path
-    ) -> Callable[..., Any]:
-        def wrapped(*args: Any, **kwargs: Any) -> Any:
+        with self._IMPORT_STATE_LOCK:
             local_names = self._discover_local_import_names(transform_root)
             self._evict_conflicting_modules(local_names, transform_root)
 
+            module = importlib.util.module_from_spec(spec)
             transform_dir = str(transform_root)
             module_names_before = set(sys.modules)
             added_to_path = False
             if transform_dir not in sys.path:
                 sys.path.insert(0, transform_dir)
                 added_to_path = True
+
+            sys.modules[module_name] = module
             try:
-                return transform(*args, **kwargs)
+                spec.loader.exec_module(module)
+            except Exception:
+                sys.modules.pop(module_name, None)
+                raise
             finally:
                 if added_to_path and transform_dir in sys.path:
                     sys.path.remove(transform_dir)
                 self._purge_new_local_modules(
                     module_names_before=module_names_before,
                     transform_root=transform_root,
-                    exclude_names=set(),
+                    exclude_names={module_name},
                 )
+        return module, transform_root
+
+    def _with_transform_path(
+        self, transform: Callable[..., Any], transform_root: Path
+    ) -> Callable[..., Any]:
+        def wrapped(*args: Any, **kwargs: Any) -> Any:
+            with self._IMPORT_STATE_LOCK:
+                local_names = self._discover_local_import_names(transform_root)
+                self._evict_conflicting_modules(local_names, transform_root)
+
+                transform_dir = str(transform_root)
+                module_names_before = set(sys.modules)
+                added_to_path = False
+                if transform_dir not in sys.path:
+                    sys.path.insert(0, transform_dir)
+                    added_to_path = True
+                try:
+                    return transform(*args, **kwargs)
+                finally:
+                    if added_to_path and transform_dir in sys.path:
+                        sys.path.remove(transform_dir)
+                    self._purge_new_local_modules(
+                        module_names_before=module_names_before,
+                        transform_root=transform_root,
+                        exclude_names=set(),
+                    )
 
         return wrapped
 
