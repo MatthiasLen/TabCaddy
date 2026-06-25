@@ -405,6 +405,9 @@ class PlotDataset:
                 )
             )
 
+        if not file_results:
+            raise ValueError(f"Column not found in selected folder files: {column}")
+
         return PlotRunResult(
             plots=file_results,
             total_files=len(files),

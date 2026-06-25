@@ -1768,6 +1768,24 @@ def test_plot_histogram_folder_fails_when_all_files_missing_column(
     assert "Traceback" not in result.stdout
 
 
+def test_plot_histogram_folder_with_n_fails_when_selected_files_missing_column(
+    tmp_path: Path,
+) -> None:
+    folder = tmp_path / "hist_selected_missing"
+    folder.mkdir()
+    _write_csv(folder / "a.csv", [{"other": 10.0}])
+    _write_csv(folder / "b.csv", [{"other": 11.0}])
+
+    result = runner.invoke(
+        app,
+        ["plot", str(folder), "value", "--kind", "histogram", "--n", "2"],
+    )
+
+    assert result.exit_code == 1
+    assert "Column not found in selected folder files: value" in result.stdout
+    assert "Traceback" not in result.stdout
+
+
 def test_plot_histogram_folder_fails_when_column_is_unplottable_in_all_files(
     tmp_path: Path,
 ) -> None:
