@@ -15,6 +15,7 @@ class ScaffoldTransform:
             raise FileExistsError(
                 f"Output file '{output_path}' already exists. Please provide another filename."
             )
+        output_path.parent.mkdir(parents=True, exist_ok=True)
 
         analysis = self._generate_analysis.run(source, ProfileMode.STANDARD).analysis
         lines = [
@@ -33,6 +34,9 @@ class ScaffoldTransform:
                 lines.append(f"#   - {column.name}: {column.dtype}")
         lines.extend(
             [
+                "",
+                "# Keep imports in this file and local helper modules at module top-level.",
+                "# Imports inside functions or class bodies are rejected during load.",
                 "",
                 "def transform(df: pl.DataFrame, context=None) -> pl.DataFrame:",
                 "    # Example: rename a column",
@@ -73,9 +77,11 @@ class ScaffoldTransform:
                 "    # if selected:",
                 "    #     df = df.select(selected).sort(selected[0])",
                 "",
-                "    # Example: use context metadata (file_name, relative_path, source_root)",
+                "    # Example: use context metadata (file_name, file_path, schema, metadata)",
                 "    # if context is not None:",
                 "    #     df = df.with_columns(pl.lit(context.file_name).alias('SOURCE_FILE'))",
+                "    #     df = df.with_columns(pl.lit(context.metadata.row_count).alias('ROW_COUNT'))",
+                "    #     # schema is a list of {name, dtype} entries",
                 "",
                 "    return df",
                 "",

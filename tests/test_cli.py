@@ -2055,36 +2055,26 @@ def test_transform_supports_sibling_module_imports(tmp_path: Path) -> None:
     assert transformed["from_helper"][0] == "yes"
 
 
-def test_transform_supports_lazy_sibling_imports(tmp_path: Path) -> None:
+def test_transform_rejects_non_top_level_imports(tmp_path: Path) -> None:
     data = tmp_path / "data"
     data.mkdir()
     _write_csv(data / "a.csv", [{"id": 1, "value": 10.0}])
 
-    helper = tmp_path / "helper.py"
-    helper.write_text(
-        "import polars as pl\n\n"
-        "def add_source_flag(df):\n"
-        "    return df.with_columns(pl.lit('lazy').alias('import_mode'))\n",
-        encoding="utf-8",
-    )
-
     transform_script = tmp_path / "lazy_transform.py"
     transform_script.write_text(
-        "def transform(df):\n"
-        "    import helper\n"
-        "    return helper.add_source_flag(df)\n",
+        "def transform(df):\n    import helper\n    return df\n",
         encoding="utf-8",
     )
 
-    output_dir = tmp_path / "out_with_lazy_helper"
+    output_dir = tmp_path / "out_with_invalid_import"
     result = runner.invoke(
         app,
         ["transform", str(data), str(transform_script), str(output_dir)],
     )
 
-    assert result.exit_code == 0
-    transformed = pl.read_csv(output_dir / "a.csv")
-    assert transformed["import_mode"][0] == "lazy"
+    assert result.exit_code == 1
+    assert "must be module top-level" in result.stdout
+    assert "Traceback" not in result.stdout
 
 
 def test_transform_isolates_same_named_helpers_between_runs(tmp_path: Path) -> None:
@@ -2140,19 +2130,11 @@ def test_transform_isolates_same_named_helpers_between_runs(tmp_path: Path) -> N
     assert second_frame["helper_origin"][0] == "second"
 
 
-def test_transform_lazy_imports_are_stable_with_workers(tmp_path: Path) -> None:
+def test_transform_rejects_non_top_level_imports_with_workers(tmp_path: Path) -> None:
     data = tmp_path / "data"
     data.mkdir()
     _write_csv(data / "a.csv", [{"id": 1, "value": 10.0}])
     _write_csv(data / "b.csv", [{"id": 2, "value": 11.0}])
-
-    helper = tmp_path / "helper.py"
-    helper.write_text(
-        "import polars as pl\n\n"
-        "def add_origin(df, file_name):\n"
-        "    return df.with_columns(pl.lit(file_name).alias('source_file'))\n",
-        encoding="utf-8",
-    )
 
     transform_script = tmp_path / "lazy_parallel_transform.py"
     transform_script.write_text(
@@ -2161,11 +2143,11 @@ def test_transform_lazy_imports_are_stable_with_workers(tmp_path: Path) -> None:
         "    if context.file_name == 'b.csv':\n"
         "        time.sleep(0.2)\n"
         "    import helper\n"
-        "    return helper.add_origin(df, context.file_name)\n",
+        "    return df\n",
         encoding="utf-8",
     )
 
-    output_dir = tmp_path / "out_parallel_lazy"
+    output_dir = tmp_path / "out_parallel_invalid_import"
     result = runner.invoke(
         app,
         [
@@ -2178,11 +2160,9 @@ def test_transform_lazy_imports_are_stable_with_workers(tmp_path: Path) -> None:
         ],
     )
 
-    assert result.exit_code == 0
-    first = pl.read_csv(output_dir / "a.csv")
-    second = pl.read_csv(output_dir / "b.csv")
-    assert first["source_file"][0] == "a.csv"
-    assert second["source_file"][0] == "b.csv"
+    assert result.exit_code == 1
+    assert "must be module top-level" in result.stdout
+    assert "Traceback" not in result.stdout
 
 
 def test_transform_load_failure_does_not_leak_nested_modules(tmp_path: Path) -> None:
