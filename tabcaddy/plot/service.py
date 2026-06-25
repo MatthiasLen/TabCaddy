@@ -16,6 +16,7 @@ from scipy import stats
 from tabcaddy.analysis.sources import iter_dataset_files
 from tabcaddy.domain.models import DatasetSource, SourceType
 from tabcaddy.shared.dataset_io import scan_dataframe, scan_parquet_dataset
+from tabcaddy.shared.histogram import build_numeric_histogram
 
 
 _SUPPORTED_AGGREGATIONS = {"mean", "median", "min", "max", "sum", "count"}
@@ -41,7 +42,7 @@ _FILTER_OPERATORS = {
 
 @dataclass
 class PlotResult:
-    chart_kind: Literal["line", "scatter"]
+    chart_kind: Literal["line", "scatter", "histogram"]
     x_column: str
     y_column: str
     x_axis_kind: Literal["numeric", "temporal", "categorical"]
@@ -60,6 +61,7 @@ class PlotResult:
     scatter_points: list[tuple[float, float]] = field(default_factory=list)
     scatter_inlier_points: list[tuple[float, float]] = field(default_factory=list)
     scatter_outlier_points: list[tuple[float, float]] = field(default_factory=list)
+    histogram_bins: list[tuple[str, int]] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
 
 
@@ -121,6 +123,39 @@ class PlotDataset:
             line_interpolation=line_interpolation,
             fail_on_x_duplicates=fail_on_x_duplicates,
             fail_on_unsorted_x=fail_on_unsorted_x,
+            filter_expr=filter_expr,
+        )
+
+        return PlotRunResult(
+            plots=[PlotFileResult(path=source.path, result=plot)],
+            total_files=1,
+            plotted_files=1,
+            skipped_files=0,
+        )
+
+    def run_histogram(
+        self,
+        source: DatasetSource,
+        column: str,
+        *,
+        folder_max_files: int = _DEFAULT_FOLDER_MAX_FILES,
+        filter_expr: str | None = None,
+    ) -> PlotRunResult:
+        if folder_max_files < 1:
+            raise ValueError("-n must be greater than or equal to 1.")
+
+        if source.source_type == SourceType.FOLDER:
+            return self._run_histogram_for_folder(
+                source,
+                column,
+                folder_max_files=folder_max_files,
+                filter_expr=filter_expr,
+            )
+
+        lazyframe = self._build_lazyframe(source)
+        plot = self._run_histogram_for_lazyframe(
+            lazyframe,
+            column,
             filter_expr=filter_expr,
         )
 
@@ -197,6 +232,141 @@ class PlotDataset:
             total_files=len(files),
             plotted_files=len(file_results),
             skipped_files=skipped_files,
+            warnings=warnings,
+        )
+
+    def _run_histogram_for_folder(
+        self,
+        source: DatasetSource,
+        column: str,
+        *,
+        folder_max_files: int,
+        filter_expr: str | None,
+    ) -> PlotRunResult:
+        files = iter_dataset_files(source)
+        if not files:
+            raise ValueError(f"No supported files found under: {source.path}")
+
+        if filter_expr is not None:
+            self._parse_filter_expression(filter_expr)
+
+        selected_files = files[:folder_max_files]
+        file_results: list[PlotFileResult] = []
+        warnings: list[str] = []
+        failed_files = 0
+        for path in selected_files:
+            try:
+                lazyframe = scan_dataframe(path)
+                result = self._run_histogram_for_lazyframe(
+                    lazyframe,
+                    column,
+                    filter_expr=filter_expr,
+                )
+            except (FileNotFoundError, ValueError, pl.exceptions.PolarsError) as error:
+                failed_files += 1
+                warnings.append(f"Skipped {path.name}: {error}")
+                continue
+
+            file_results.append(PlotFileResult(path=path, result=result))
+
+        capped_files = max(0, len(files) - len(selected_files))
+        skipped_files = capped_files + failed_files
+        if failed_files > 0:
+            warnings.insert(
+                0,
+                f"Skipped {failed_files} file(s) due to plotting errors.",
+            )
+        if capped_files > 0:
+            warnings.append(
+                (
+                    f"Folder contains {len(files)} files; plotted first {len(selected_files)}. "
+                    f"Increase -n to at least {len(files)} to plot all files."
+                )
+            )
+
+        return PlotRunResult(
+            plots=file_results,
+            total_files=len(files),
+            plotted_files=len(file_results),
+            skipped_files=skipped_files,
+            warnings=warnings,
+        )
+
+    def _run_histogram_for_lazyframe(
+        self,
+        lazyframe: pl.LazyFrame,
+        column: str,
+        *,
+        filter_expr: str | None,
+    ) -> PlotResult:
+        schema = lazyframe.collect_schema()
+        if column not in schema:
+            raise ValueError(f"Column not found: {column}")
+
+        column_dtype = schema[column]
+        if column_dtype.is_nested():
+            raise ValueError(
+                f"Column '{column}' is not plottable (nested type: {column_dtype})."
+            )
+
+        working = lazyframe
+        warnings: list[str] = []
+        if filter_expr is not None:
+            working = lazyframe.filter(
+                self._build_filter_predicate(filter_expr, schema=schema)
+            )
+
+        frame = working.select(
+            [
+                pl.col(column).alias("_value_raw"),
+                pl.col(column).cast(pl.Float64, strict=False).alias("_value"),
+            ]
+        ).collect(engine="auto")
+        row_count = frame.height
+
+        cast_failed = frame.filter(
+            pl.col("_value_raw").is_not_null() & pl.col("_value").is_null()
+        ).height
+        if cast_failed > 0:
+            warnings.append(
+                (
+                    f"Dropped {cast_failed} rows where '{column}' could not be cast to "
+                    "numeric for histogram."
+                )
+            )
+
+        filtered = frame.filter(
+            pl.col("_value").is_not_null() & pl.col("_value").is_finite()
+        )
+        plotted_rows = filtered.height
+        dropped_rows = row_count - plotted_rows
+        if plotted_rows == 0:
+            raise ValueError(
+                f"No plottable numeric values remain for histogram column '{column}'."
+            )
+
+        bins = build_numeric_histogram(filtered.get_column("_value").to_numpy())
+        if not bins:
+            raise ValueError(
+                f"Unable to build histogram for column '{column}' from finite numeric values."
+            )
+
+        return PlotResult(
+            chart_kind="histogram",
+            x_column=column,
+            y_column=column,
+            x_axis_kind="numeric",
+            x_axis_time_unit=None,
+            x_axis_timezone=None,
+            row_count=row_count,
+            plotted_rows=plotted_rows,
+            dropped_rows=dropped_rows,
+            duplicate_x_count=0,
+            sorted_x=False,
+            auto_sorted=False,
+            aggregated=False,
+            line_interpolation=None,
+            histogram_bins=bins,
             warnings=warnings,
         )
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta, timezone
 
 import polars as pl
+import pytest
 
 from tabcaddy.plot.service import PlotDataset
 
@@ -140,3 +141,31 @@ def test_parse_filter_value_non_datetime_dtype_ignores_non_callable_base_type() 
     parsed = dataset._parse_filter_value("42", dtype=FakeDType())  # type: ignore[arg-type]
 
     assert parsed == 42
+
+
+def test_histogram_plot_builds_bins_for_numeric_column() -> None:
+    dataset = PlotDataset()
+    lazyframe = pl.DataFrame({"value": [1.0, 2.0, 3.0, 4.0]}).lazy()
+
+    result = dataset._run_histogram_for_lazyframe(
+        lazyframe,
+        "value",
+        filter_expr=None,
+    )
+
+    assert result.chart_kind == "histogram"
+    assert result.plotted_rows == 4
+    assert result.histogram_bins
+    assert sum(count for _, count in result.histogram_bins) == 4
+
+
+def test_histogram_plot_rejects_non_numeric_column_values() -> None:
+    dataset = PlotDataset()
+    lazyframe = pl.DataFrame({"value": ["a", "b", "c"]}).lazy()
+
+    with pytest.raises(ValueError, match="No plottable numeric values remain"):
+        dataset._run_histogram_for_lazyframe(
+            lazyframe,
+            "value",
+            filter_expr=None,
+        )

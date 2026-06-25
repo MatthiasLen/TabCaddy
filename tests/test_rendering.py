@@ -458,6 +458,41 @@ def test_scatter_chart_single_y_uses_true_axis_labels() -> None:
     assert "4.5" not in chart
 
 
+def test_plot_view_histogram_renders_bins_and_metadata() -> None:
+    result = PlotResult(
+        chart_kind="histogram",
+        x_column="value",
+        y_column="value",
+        x_axis_kind="numeric",
+        x_axis_time_unit=None,
+        x_axis_timezone=None,
+        row_count=4,
+        plotted_rows=4,
+        dropped_rows=0,
+        duplicate_x_count=0,
+        sorted_x=False,
+        auto_sorted=False,
+        aggregated=False,
+        line_interpolation=None,
+        histogram_bins=[("1..2", 2), ("2..3", 2)],
+    )
+    run_result = PlotRunResult(
+        plots=[PlotFileResult(path=Path("plot.csv"), result=result)],
+        total_files=1,
+        plotted_files=1,
+        skipped_files=0,
+    )
+
+    console = create_console(record=True, width=100, legacy_windows=False)
+    console.print(build_plot_view(run_result, render=RenderProfile(ascii_only=True)))
+    output = console.export_text()
+
+    assert "histogram" in output
+    assert "Bins" in output
+    assert "1..2" in output
+    assert "Column" in output
+
+
 def test_plot_chart_width_uses_full_width_for_narrow_console() -> None:
     width = _resolve_chart_width(console_width=80)
 

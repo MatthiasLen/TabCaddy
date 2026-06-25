@@ -336,20 +336,23 @@ def head(
         )
 
 
-@app.command(help="Plot one column against another using line or scatter charts")
+@app.command(help="Plot columns using line, scatter, or histogram charts")
 def plot(
     source: Path,
-    column_x: str,
-    column_y: list[str] = typer.Argument(
+    columns: list[str] = typer.Argument(
         ...,
-        help="One or more Y columns to plot against column_x.",
+        help=(
+            "Columns to plot. For line/scatter use: X Y [Y ...]. "
+            "For histogram use: COLUMN [COLUMN ...]."
+        ),
     ),
-    kind: Literal["auto", "line", "scatter"] = typer.Option(
+    kind: Literal["auto", "line", "scatter", "histogram"] = typer.Option(
         "auto",
         "--kind",
         help=(
-            "Chart kind. auto chooses line for temporal x and for numeric x "
-            "only when values are monotonic and unique."
+            "Chart kind. auto chooses line for temporal x and for numeric x only "
+            "when values are monotonic and unique. histogram plots one histogram "
+            "per provided column."
         ),
     ),
     aggregate_x: Literal["mean", "median", "min", "max", "sum", "count"]
@@ -391,10 +394,75 @@ def plot(
     console = create_console()
     render = resolve_render_profile(console)
 
-    y_columns = list(dict.fromkeys(column_y))
-    if not y_columns:
-        console.print("[red]At least one Y column is required.[/red]")
+    selected_columns = list(dict.fromkeys(columns))
+    if not selected_columns:
+        console.print("[red]At least one column is required.[/red]")
         raise typer.Exit(code=1)
+
+    if kind == "histogram":
+        if aggregate_x is not None:
+            console.print(
+                "[red]--aggregate-x is not supported for --kind histogram.[/red]"
+            )
+            raise typer.Exit(code=1)
+        if line_interpolation != "linear":
+            console.print(
+                "[red]--interpolation is not supported for --kind histogram.[/red]"
+            )
+            raise typer.Exit(code=1)
+        if fail_on_x_duplicates:
+            console.print(
+                "[red]--fail-on-x-duplicates is not supported for --kind histogram.[/red]"
+            )
+            raise typer.Exit(code=1)
+        if fail_on_unsorted_x:
+            console.print(
+                "[red]--fail-on-x-unsorted is not supported for --kind histogram.[/red]"
+            )
+            raise typer.Exit(code=1)
+
+        try:
+            source_resolved = resolve_source(source)
+            plot_dataset = PlotDataset()
+            results_by_y = [
+                (
+                    column,
+                    plot_dataset.run_histogram(
+                        source_resolved,
+                        column,
+                        folder_max_files=n,
+                        filter_expr=filter_expr,
+                    ),
+                )
+                for column in selected_columns
+            ]
+        except pl.exceptions.PolarsError as error:
+            console.print(f"Failed to read input data for plot: {error}")
+            raise typer.Exit(code=1) from error
+        except (FileNotFoundError, ValueError) as error:
+            console.print(f"[red]{error}[/red]")
+            raise typer.Exit(code=1) from error
+
+        if len(results_by_y) == 1:
+            column_name = results_by_y[0][0]
+            console.print(
+                build_plot_view(
+                    results_by_y[0][1], render=render, chart_title=column_name
+                )
+            )
+            return
+
+        console.print(build_multi_y_plot_view(results_by_y, render=render))
+        return
+
+    if len(selected_columns) < 2:
+        console.print(
+            "[red]Line/scatter plotting requires at least X and one Y column.[/red]"
+        )
+        raise typer.Exit(code=1)
+
+    column_x = selected_columns[0]
+    y_columns = selected_columns[1:]
 
     try:
         source_resolved = resolve_source(source)

@@ -177,21 +177,25 @@ Focused schema analysis for groups, type changes, and non-dominant files. It alw
 `plot`
 
 ```bash
-tabcaddy plot <source> <column_x> <column_y> [<column_y> ...] [--kind auto|line|scatter] [--aggregate-x mean|median|min|max|sum|count] [--interpolation linear|nearest] [--fail-on-x-duplicates] [--fail-on-x-unsorted] [--n N] [--filter "COLUMN OP VALUE"]
+tabcaddy plot <source> <column> [<column> ...] [--kind auto|line|scatter|histogram] [--aggregate-x mean|median|min|max|sum|count] [--interpolation linear|nearest] [--fail-on-x-duplicates] [--fail-on-x-unsorted] [--n N] [--filter "COLUMN OP VALUE"]
 ```
 
-Plots one or more y-columns against the same x-column in the terminal.
+Plots columns in the terminal as line, scatter, or histogram charts.
 
-- `column_x`: numeric (`Int`, `Float`, `Decimal`) or temporal (`Date`, `Datetime`, `Time`, `Duration`); categorical/string x is accepted for scatter only
-- `column_y`: one or more y-columns; each must be numeric, boolean (`true=1`, `false=0`), or castable to `Float64`; strings and nested types are not supported
+- line/scatter mode column layout: first column is `x`, remaining columns are one or more `y` series
+- histogram mode column layout: one or more target columns; each target renders a separate histogram section
+- `x` in line/scatter: numeric (`Int`, `Float`, `Decimal`) or temporal (`Date`, `Datetime`, `Time`, `Duration`); categorical/string x is accepted for scatter only
+- `y` in line/scatter: one or more y-columns; each must be numeric, boolean (`true=1`, `false=0`), or castable to `Float64`; strings and nested types are not supported
 - `--kind auto` picks `line` for temporal `x` only when x-values are unique; if temporal duplicates exist it picks `scatter`; for numeric `x`, it picks `line` only when values are monotonic and unique; otherwise it picks `scatter`
+- `--kind histogram` is explicit (not auto-selected) and uses the same numeric histogram policy as deep summary profiling
 - `--filter` takes a single expression argument, for example `--filter "event_date >= 2026-01-01"`; `OP` must be one of `==`, `!=`, `>`, `>=`, `<`, `<=`
 - for temporal columns, use ISO-8601 literals: `Date` uses `YYYY-MM-DD`; `Datetime` uses `YYYY-MM-DDTHH:MM:SS` (timezone accepted when present)
 - `--interpolation` controls line rendering interpolation; defaults to `linear` and also supports `nearest`
 - line plots fail on duplicate `x` by default unless `--aggregate-x` is provided
 - line plots auto-sort `x` by default; use `--fail-on-x-unsorted` for strict mode
+- `--aggregate-x`, `--interpolation`, `--fail-on-x-duplicates`, and `--fail-on-x-unsorted` are line/scatter-only options
 - for folder input, `--n` limits plotting to the first `N` files (default `5`)
-- multiple y-columns render as stacked plots
+- multiple columns render as stacked sections
 - rows with null values or non-numeric `y` values are dropped and reported as warnings
 
 `compile`

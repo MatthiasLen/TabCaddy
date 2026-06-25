@@ -8,6 +8,7 @@ from rich.text import Text
 from tabcaddy.plot.service import PlotResult, PlotRunResult
 from tabcaddy.rendering.charts.axis_formatters import format_epoch_seconds_utc
 from tabcaddy.rendering.charts.axis_formatters import format_numeric_axis
+from tabcaddy.rendering.charts.bar_chart import render_bar_chart
 from tabcaddy.rendering.charts.line_chart import get_line_series_ansi_color
 from tabcaddy.rendering.charts.line_chart import get_line_series_rich_style
 from tabcaddy.rendering.charts.line_chart import render_line_chart
@@ -262,24 +263,31 @@ def _build_plot_metadata_table(
     metadata.add_column("Field", style="cyan")
     metadata.add_column("Value", style="white")
     metadata.add_row("Kind", result.chart_kind)
-    metadata.add_row("X", result.x_column)
-    metadata.add_row("Y", y_value)
+    if result.chart_kind == "histogram":
+        metadata.add_row("Column", y_value)
+    else:
+        metadata.add_row("X", result.x_column)
+        metadata.add_row("Y", y_value)
     metadata.add_row("Input rows", str(result.row_count))
     metadata.add_row("Plotted rows", str(result.plotted_rows))
     metadata.add_row("Dropped rows", str(result.dropped_rows))
     if result.chart_kind == "scatter":
         metadata.add_row("Outliers", str(len(result.scatter_outlier_points)))
-    metadata.add_row("Duplicate x", str(result.duplicate_x_count))
-    metadata.add_row("Sorted x", "yes" if result.sorted_x else "no")
-    metadata.add_row("Auto-sorted", "yes" if result.auto_sorted else "no")
-    metadata.add_row("Aggregated", "yes" if result.aggregated else "no")
+    if result.chart_kind == "histogram":
+        metadata.add_row("Bins", str(len(result.histogram_bins)))
+    else:
+        metadata.add_row("Duplicate x", str(result.duplicate_x_count))
+        metadata.add_row("Sorted x", "yes" if result.sorted_x else "no")
+        metadata.add_row("Auto-sorted", "yes" if result.auto_sorted else "no")
+        metadata.add_row("Aggregated", "yes" if result.aggregated else "no")
     if result.line_interpolation is not None:
         metadata.add_row("Interpolation", result.line_interpolation)
-    metadata.add_row("X Axis Kind", result.x_axis_kind)
-    if result.x_axis_time_unit is not None:
-        metadata.add_row("X Time Unit", result.x_axis_time_unit)
-    if result.x_axis_timezone is not None:
-        metadata.add_row("X Time Zone", result.x_axis_timezone)
+    if result.chart_kind != "histogram":
+        metadata.add_row("X Axis Kind", result.x_axis_kind)
+        if result.x_axis_time_unit is not None:
+            metadata.add_row("X Time Unit", result.x_axis_time_unit)
+        if result.x_axis_timezone is not None:
+            metadata.add_row("X Time Zone", result.x_axis_timezone)
     return metadata
 
 
@@ -322,6 +330,11 @@ def _build_single_plot_view(
             color=line_color_ansi,
             ascii_only=render.ascii_only,
             width=chart_width,
+        )
+    elif result.chart_kind == "histogram":
+        fill = "#" if render.ascii_only else "█"
+        chart = render_bar_chart(
+            result.histogram_bins, width=max(8, chart_width - 20), fill=fill
         )
     else:
         chart = render_scatter_chart(

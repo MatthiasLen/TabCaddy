@@ -1628,6 +1628,72 @@ def test_plot_folder_limit_rejects_zero(tmp_path: Path) -> None:
     assert "Traceback" not in result.stdout
 
 
+def test_plot_histogram_renders_single_column(tmp_path: Path) -> None:
+    csv_file = tmp_path / "histogram.csv"
+    _write_csv(
+        csv_file,
+        [
+            {"value": 1.0},
+            {"value": 2.0},
+            {"value": 2.5},
+            {"value": 4.0},
+        ],
+    )
+
+    result = runner.invoke(
+        app,
+        ["plot", str(csv_file), "value", "--kind", "histogram"],
+    )
+
+    assert result.exit_code == 0
+    assert "histogram" in result.stdout
+    assert "Bins" in result.stdout
+
+
+def test_plot_histogram_renders_multiple_columns(tmp_path: Path) -> None:
+    csv_file = tmp_path / "histogram_multi.csv"
+    _write_csv(
+        csv_file,
+        [
+            {"a": 1.0, "b": 10.0},
+            {"a": 2.0, "b": 12.0},
+            {"a": 3.0, "b": 14.0},
+        ],
+    )
+
+    result = runner.invoke(
+        app,
+        ["plot", str(csv_file), "a", "b", "--kind", "histogram"],
+    )
+
+    assert result.exit_code == 0
+    assert "a" in result.stdout
+    assert "b" in result.stdout
+    assert "histogram" in result.stdout
+
+
+def test_plot_histogram_rejects_aggregate_option(tmp_path: Path) -> None:
+    csv_file = tmp_path / "histogram_invalid_option.csv"
+    _write_csv(csv_file, [{"value": 1.0}, {"value": 2.0}])
+
+    result = runner.invoke(
+        app,
+        [
+            "plot",
+            str(csv_file),
+            "value",
+            "--kind",
+            "histogram",
+            "--aggregate-x",
+            "mean",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "--aggregate-x is not supported for --kind histogram" in result.stdout
+    assert "Traceback" not in result.stdout
+
+
 def test_transform_user_script_failures_fail_without_traceback(
     tmp_path: Path,
 ) -> None:
