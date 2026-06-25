@@ -339,11 +339,13 @@ class PlotDataset:
         if warning_messages:
             plot.warnings = warning_messages + plot.warnings
 
+        skipped_files = len(missing_column_files) + len(failed_files)
+
         return PlotRunResult(
             plots=[PlotFileResult(path=source.path, result=plot)],
             total_files=len(files),
             plotted_files=1,
-            skipped_files=0,
+            skipped_files=skipped_files,
             warnings=[],
         )
 

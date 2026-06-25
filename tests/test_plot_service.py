@@ -5,6 +5,7 @@ from datetime import date, datetime, timedelta, timezone
 import polars as pl
 import pytest
 
+from tabcaddy.analysis.sources import resolve_source
 from tabcaddy.plot.service import PlotDataset
 
 
@@ -225,3 +226,28 @@ def test_histogram_plot_formats_temporal_bucket_bounds() -> None:
     assert result.x_axis_timezone == "UTC"
     assert result.histogram_bins
     assert any("2026-01" in label for label, _ in result.histogram_bins)
+
+
+def test_histogram_folder_aggregate_reports_skipped_files_for_missing_column(
+    tmp_path,
+) -> None:
+    folder = tmp_path / "hist_mixed"
+    folder.mkdir()
+
+    pl.DataFrame({"value": [1.0, 2.0]}).write_csv(folder / "has_value.csv")
+    pl.DataFrame({"other": [10.0, 11.0]}).write_csv(folder / "missing_value.csv")
+
+    dataset = PlotDataset()
+    result = dataset.run_histogram(
+        resolve_source(folder),
+        "value",
+        filter_expr=None,
+    )
+
+    assert result.total_files == 2
+    assert result.plotted_files == 1
+    assert result.skipped_files == 1
+    assert any(
+        "Skipped 1 file(s) missing column 'value'" in warning
+        for warning in result.plots[0].result.warnings
+    )
