@@ -122,6 +122,8 @@ def transform(df: pl.DataFrame, context=None) -> pl.DataFrame:
     return df
 ```
 
+All imports in transform scripts must be declared at module top-level. The same rule applies to local helper modules imported by the transform. Imports inside `transform(...)`, helper functions, or other nested scopes are rejected.
+
 Then apply it and inspect the result:
 
 ```bash
@@ -249,6 +251,11 @@ def transform(df):
 def transform(df, context):
     return df
 ```
+
+Import policy:
+
+- import installed packages and sibling modules at module top-level only
+- imports inside `transform`, local helper functions, conditionals, loops, or other nested scopes are not supported
 
 `context` fields:
 

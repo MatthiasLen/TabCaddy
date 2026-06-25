@@ -120,3 +120,16 @@ def test_scaffold_transform_raises_if_output_exists(tmp_path: Path) -> None:
         assert False, "Expected FileExistsError when scaffold output already exists"
     except FileExistsError as error:
         assert "Please provide another filename." in str(error)
+
+
+def test_scaffold_transform_creates_missing_parent_directories(tmp_path: Path) -> None:
+    data = tmp_path / "data"
+    data.mkdir()
+    _write_csv(data / "a.csv", [{"id": 1, "value": 10.0}])
+
+    output_file = tmp_path / "nested" / "transforms" / "transform.py"
+
+    destination = ScaffoldTransform().run(resolve_source(data), output_file)
+
+    assert destination == output_file
+    assert output_file.exists()
