@@ -1768,6 +1768,27 @@ def test_plot_histogram_folder_fails_when_all_files_missing_column(
     assert "Traceback" not in result.stdout
 
 
+def test_plot_histogram_folder_fails_when_column_is_unplottable_in_all_files(
+    tmp_path: Path,
+) -> None:
+    folder = tmp_path / "hist_all_unplottable"
+    folder.mkdir()
+    _write_nested_parquet(folder / "a.parquet", [{"v": [1, 2]}, {"v": [3, 4]}])
+    _write_nested_parquet(folder / "b.parquet", [{"v": [5, 6]}, {"v": [7, 8]}])
+
+    result = runner.invoke(
+        app,
+        ["plot", str(folder), "v", "--kind", "histogram"],
+    )
+
+    assert result.exit_code == 1
+    assert (
+        "Column 'v' is present but not plottable in any folder file." in result.stdout
+    )
+    assert "Column not found in any folder file: v" not in result.stdout
+    assert "Traceback" not in result.stdout
+
+
 def test_transform_user_script_failures_fail_without_traceback(
     tmp_path: Path,
 ) -> None:

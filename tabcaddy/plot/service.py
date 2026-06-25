@@ -272,6 +272,7 @@ class PlotDataset:
         selected_lazyframes: list[pl.LazyFrame] = []
         missing_column_files: list[str] = []
         failed_files: list[str] = []
+        column_seen_in_schema = False
         total_files = len(files)
         for index, path in enumerate(files, start=1):
             try:
@@ -288,6 +289,8 @@ class PlotDataset:
                 if progress_callback is not None:
                     progress_callback(index, total_files)
                 continue
+
+            column_seen_in_schema = True
 
             column_dtype = schema[column]
             if column_dtype.is_nested():
@@ -306,6 +309,10 @@ class PlotDataset:
                 progress_callback(index, total_files)
 
         if not selected_lazyframes:
+            if column_seen_in_schema:
+                raise ValueError(
+                    f"Column '{column}' is present but not plottable in any folder file."
+                )
             raise ValueError(f"Column not found in any folder file: {column}")
 
         if len(selected_lazyframes) == 1:
