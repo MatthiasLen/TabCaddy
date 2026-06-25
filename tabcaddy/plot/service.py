@@ -369,9 +369,18 @@ class PlotDataset:
         file_results: list[PlotFileResult] = []
         warnings: list[str] = []
         failed_files = 0
+        column_seen_in_schema = False
+        histogram_failure_messages: list[str] = []
         for path in selected_files:
             try:
                 lazyframe = scan_dataframe(path)
+                schema = lazyframe.collect_schema()
+                if column not in schema:
+                    failed_files += 1
+                    warnings.append(f"Skipped {path.name}: Column not found: {column}")
+                    continue
+
+                column_seen_in_schema = True
                 result = self._run_histogram_for_lazyframe(
                     lazyframe,
                     column,
@@ -380,6 +389,8 @@ class PlotDataset:
             except (FileNotFoundError, ValueError, pl.exceptions.PolarsError) as error:
                 failed_files += 1
                 warnings.append(f"Skipped {path.name}: {error}")
+                if column_seen_in_schema:
+                    histogram_failure_messages.append(str(error))
                 continue
 
             file_results.append(PlotFileResult(path=path, result=result))
@@ -400,6 +411,21 @@ class PlotDataset:
             )
 
         if not file_results:
+            if column_seen_in_schema:
+                if histogram_failure_messages:
+                    raise ValueError(
+                        (
+                            f"Unable to build histogram for selected folder files and "
+                            f"column '{column}'. First failure: "
+                            f"{histogram_failure_messages[0]}"
+                        )
+                    )
+                raise ValueError(
+                    (
+                        f"Unable to build histogram for selected folder files and "
+                        f"column '{column}'."
+                    )
+                )
             raise ValueError(f"Column not found in selected folder files: {column}")
 
         return PlotRunResult(

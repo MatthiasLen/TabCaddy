@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from functools import partial
 from pathlib import Path
 from typing import Literal
 
@@ -16,6 +17,7 @@ from tabcaddy.domain.models import ProfileMode
 from tabcaddy.domain.models import SourceType
 from tabcaddy.merge import MergeDatasets
 from tabcaddy.plot.service import PlotDataset
+from tabcaddy.plot.service import PlotRunResult
 from tabcaddy.preview import HeadDataset
 from tabcaddy.rendering.console import create_console
 from tabcaddy.rendering.console import resolve_render_profile
@@ -33,6 +35,20 @@ app = typer.Typer(
     help="Explore, compile, transform, and compare datasets.",
     no_args_is_help=True,
 )
+
+
+def _update_histogram_scan_status(
+    status,
+    column: str,
+    processed: int,
+    total: int,
+) -> None:
+    status.update(
+        (
+            f"Scanning folder history for histogram '{column}'... "
+            f"{processed}/{total} files"
+        )
+    )
 
 
 def _show_version(value: bool) -> None:
@@ -429,27 +445,24 @@ def plot(
         try:
             source_resolved = resolve_source(source)
             plot_dataset = PlotDataset()
-            results_by_y: list[tuple[str, object]] = []
+            results_by_y: list[tuple[str, PlotRunResult]] = []
             for column in selected_columns:
                 if source_resolved.source_type == SourceType.FOLDER and n is None:
                     with console.status(
                         f"Scanning folder history for histogram '{column}'... 0/? files"
                     ) as status:
-
-                        def _update_progress(processed: int, total: int) -> None:
-                            status.update(
-                                (
-                                    f"Scanning folder history for histogram '{column}'... "
-                                    f"{processed}/{total} files"
-                                )
-                            )
+                        progress_callback = partial(
+                            _update_histogram_scan_status,
+                            status,
+                            column,
+                        )
 
                         run_result = plot_dataset.run_histogram(
                             source_resolved,
                             column,
                             folder_max_files=n,
                             filter_expr=filter_expr,
-                            progress_callback=_update_progress,
+                            progress_callback=progress_callback,
                         )
                 else:
                     run_result = plot_dataset.run_histogram(

@@ -622,6 +622,19 @@ def test_bar_chart_truncates_long_labels_to_single_line() -> None:
     assert len(set(starts)) == 1
 
 
+def test_bar_chart_respects_narrow_max_width() -> None:
+    items = [
+        ("very long histogram bucket label", 12345),
+        ("short", 9),
+    ]
+
+    chart = render_bar_chart(items, width=20, fill="#", max_width=8)
+    lines = chart.splitlines()
+
+    assert len(lines) == 2
+    assert all(len(line) <= 8 for line in lines)
+
+
 def test_plot_chart_width_uses_full_width_for_narrow_console() -> None:
     width = _resolve_chart_width(console_width=80)
 
