@@ -362,6 +362,26 @@ def test_scatter_chart_formats_temporal_x_labels_as_utc_dates() -> None:
     assert "2026-02-09" in chart
 
 
+def test_epoch_formatter_accepts_nanosecond_epoch_values() -> None:
+    value_ns = datetime(2026, 2, 7, tzinfo=timezone.utc).timestamp() * 1_000_000_000
+
+    formatted = format_epoch_seconds_utc(value_ns)
+
+    assert "2026-02-07" in formatted
+
+
+def test_scatter_chart_formats_temporal_y_labels_as_utc_dates() -> None:
+    points = [
+        (1.0, datetime(2026, 2, 7, tzinfo=timezone.utc).timestamp()),
+        (2.0, datetime(2026, 2, 9, tzinfo=timezone.utc).timestamp()),
+    ]
+
+    chart = render_scatter_chart(points, y_tick_formatter=format_epoch_seconds_utc)
+
+    assert "2026-02-07" in chart
+    assert "2026-02-09" in chart
+
+
 def test_scatter_chart_uses_box_drawing_axes_by_default() -> None:
     points = [(0.0, 0.0), (1.0, 1.0)]
 

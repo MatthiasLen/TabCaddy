@@ -321,6 +321,14 @@ def _build_single_plot_view(
     elif result.x_axis_kind == "numeric":
         x_tick_formatter = format_numeric_axis
 
+    y_tick_formatter = None
+    if (
+        result.y_axis_kind == "temporal"
+        and result.y_axis_time_unit == "epoch_seconds"
+        and result.y_axis_timezone == "UTC"
+    ):
+        y_tick_formatter = format_epoch_seconds_utc
+
     if result.chart_kind == "line":
         chart = render_line_chart(
             result.line_values,
@@ -349,6 +357,7 @@ def _build_single_plot_view(
             x_axis_char="-" if render.ascii_only else "─",
             axis_corner_char="+" if render.ascii_only else "└",
             x_tick_formatter=x_tick_formatter,
+            y_tick_formatter=y_tick_formatter,
             width=chart_width,
         )
 

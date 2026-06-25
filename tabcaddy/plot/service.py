@@ -62,6 +62,9 @@ class PlotResult:
     scatter_outlier_points: list[tuple[float, float]] = field(default_factory=list)
     histogram_bins: list[tuple[str, int]] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    y_axis_kind: Literal["numeric", "temporal", "categorical"] | None = None
+    y_axis_time_unit: Literal["epoch_seconds"] | None = None
+    y_axis_timezone: Literal["UTC"] | None = None
 
 
 @dataclass
@@ -525,6 +528,7 @@ class PlotDataset:
             schema, x_column=x_column, y_column=y_column
         )
         x_axis_kind, x_axis_time_unit, x_axis_timezone = self._axis_metadata(x_dtype)
+        y_axis_kind, y_axis_time_unit, y_axis_timezone = self._axis_metadata(y_dtype)
         filtered, row_count, dropped_rows, warnings = self._prepare_plot_frame(
             lazyframe,
             x_column=x_column,
@@ -575,6 +579,9 @@ class PlotDataset:
                 x_axis_kind=x_axis_kind,
                 x_axis_time_unit=x_axis_time_unit,
                 x_axis_timezone=x_axis_timezone,
+                y_axis_kind=y_axis_kind,
+                y_axis_time_unit=y_axis_time_unit,
+                y_axis_timezone=y_axis_timezone,
                 row_count=row_count,
                 dropped_rows=dropped_rows,
                 duplicate_x_count=duplicate_x_count,
@@ -592,6 +599,9 @@ class PlotDataset:
             x_axis_kind=x_axis_kind,
             x_axis_time_unit=x_axis_time_unit,
             x_axis_timezone=x_axis_timezone,
+            y_axis_kind=y_axis_kind,
+            y_axis_time_unit=y_axis_time_unit,
+            y_axis_timezone=y_axis_timezone,
             row_count=row_count,
             dropped_rows=dropped_rows,
             duplicate_x_count=duplicate_x_count,
@@ -840,6 +850,9 @@ class PlotDataset:
         x_axis_kind: Literal["numeric", "temporal", "categorical"],
         x_axis_time_unit: Literal["epoch_seconds"] | None,
         x_axis_timezone: Literal["UTC"] | None,
+        y_axis_kind: Literal["numeric", "temporal", "categorical"],
+        y_axis_time_unit: Literal["epoch_seconds"] | None,
+        y_axis_timezone: Literal["UTC"] | None,
         row_count: int,
         dropped_rows: int,
         duplicate_x_count: int,
@@ -880,6 +893,9 @@ class PlotDataset:
             line_x_values=line_x_values,
             line_values=line_values,
             warnings=warnings,
+            y_axis_kind=y_axis_kind,
+            y_axis_time_unit=y_axis_time_unit,
+            y_axis_timezone=y_axis_timezone,
         )
 
     def _build_scatter_result(
@@ -892,6 +908,9 @@ class PlotDataset:
         x_axis_kind: Literal["numeric", "temporal", "categorical"],
         x_axis_time_unit: Literal["epoch_seconds"] | None,
         x_axis_timezone: Literal["UTC"] | None,
+        y_axis_kind: Literal["numeric", "temporal", "categorical"],
+        y_axis_time_unit: Literal["epoch_seconds"] | None,
+        y_axis_timezone: Literal["UTC"] | None,
         row_count: int,
         dropped_rows: int,
         duplicate_x_count: int,
@@ -936,6 +955,9 @@ class PlotDataset:
             scatter_inlier_points=scatter_inlier_points,
             scatter_outlier_points=scatter_outlier_points,
             warnings=warnings,
+            y_axis_kind=y_axis_kind,
+            y_axis_time_unit=y_axis_time_unit,
+            y_axis_timezone=y_axis_timezone,
         )
 
     def _duplicate_count(self, frame: pl.DataFrame) -> int:
